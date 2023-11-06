@@ -22,7 +22,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::fs::write;
-use std::io::{Cursor, Seek};
+use std::io::Cursor;
 use std::path::Path;
 use tracing::debug;
 
@@ -30,28 +30,28 @@ pub type MatchScaleFn = fn(usize) -> Option<f32>;
 pub type MatchOffsetFn = fn(usize) -> Option<i16>;
 pub type MatchFieldTypeFn = fn(usize) -> FieldType;
 
-pub struct FitReader {
+pub struct Fit {
     pub header: FitHeader,
 
-    pub data: Vec<DataMessage>,
+    pub data: Vec<FitDataMessage>,
 
-    map: HashMap<u8, VecDeque<FitDefinition>>,
+    map: HashMap<u8, VecDeque<FitDefinitionMessage>>,
 }
 
-impl Debug for FitReader {
+impl Debug for Fit {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("Fit").field("header", &self.header).finish()
     }
 }
 
-impl FitReader {
+impl Fit {
     pub fn read(buf: Vec<u8>) -> BinResult<Self> {
         let mut cursor = Cursor::new(buf);
         let header: FitHeader = cursor.read_ne()?;
         debug!("header: {:?}", header);
-        let mut map: HashMap<u8, VecDeque<FitDefinition>> = HashMap::new();
+        let mut map: HashMap<u8, VecDeque<FitDefinitionMessage>> = HashMap::new();
 
-        let mut data: Vec<DataMessage> = Vec::new();
+        let mut data: Vec<FitDataMessage> = Vec::new();
         loop {
             let message_header: FitMessageHeader = cursor.read_ne()?;
             match message_header.definition {
@@ -60,7 +60,7 @@ impl FitReader {
                         cursor.read_ne_args((message_header.dev_fields,))?;
                     map.entry(message_header.local_num)
                         .or_insert_with(VecDeque::new)
-                        .push_front(FitDefinition {
+                        .push_front(FitDefinitionMessage {
                             header: message_header,
                             message: definition_message,
                         });
@@ -73,7 +73,10 @@ impl FitReader {
                     debug!("definition: {:?}", definition);
                     let data_message: DataMessage = cursor.read_ne_args((definition,))?;
                     debug!("massage: {:?}", data_message);
-                    data.push(data_message);
+                    data.push(FitDataMessage {
+                        header: message_header,
+                        message: data_message,
+                    });
                     if cursor.position() >= (header.data_size + header.header_size as u32) as u64 {
                         debug!(
                             "decode finish! pos: {}, size: {:?}KB",
@@ -85,51 +88,38 @@ impl FitReader {
                 }
             }
         }
-        Ok(FitReader { header, data, map })
+        Ok(Fit { header, data, map })
     }
-}
 
-pub struct FitWriter {
-    pub header: FitHeader,
-    pub data: Vec<FitWriteData>,
-}
+    pub fn write<P: AsRef<Path>>(&self, path: P) -> BinResult<()> {
+        let mut buf = Vec::new();
+        self.write_buf(&mut buf)?;
+        write(path, &buf)?;
+        Ok(())
+    }
 
-impl FitWriter {
-    // pub fn write<P: AsRef<Path>>(self, path: P) -> BinResult<()> {
-    //     let mut bytes = Vec::new();
-    //     let mut writer = Cursor::new(&mut bytes);
-    //
-    //     self.header.write(&mut writer)?;
-    //
-    //     let mut map: HashMap<u8, VecDeque<FitDefinition>> = self.map.clone();
-    //     let data = self.data;
-    //     for item in data {
-    //         match map.get_mut(&item.header.local_num) {
-    //             None => {
-    //                 item.write(&mut writer)?;
-    //             }
-    //             Some(queue) => {
-    //                 match queue.back() {
-    //                     None => {}
-    //                     Some(d) => {
-    //                         d.write(&mut writer).unwrap();
-    //                         queue.pop_back();
-    //                     }
-    //                 };
-    //                 item.write(&mut writer)?;
-    //             }
-    //         };
-    //     }
-    //
-    //     write(path, &bytes)?;
-    //
-    //     Ok(())
-    // }
-}
+    pub fn write_buf(&self, buf: &mut Vec<u8>) -> BinResult<()> {
+        let mut map = self.map.clone();
 
-pub struct FitWriteData {
-    definition: Option<FitDefinition>,
-    data: DataMessage,
+        let mut writer = Cursor::new(buf);
+        self.header.write(&mut writer)?;
+
+        for item in &self.data {
+            let mut definition_message = match map.get_mut(&item.header.local_num) {
+                None => continue,
+                Some(mut queue) => queue.pop_back(),
+            };
+            match definition_message {
+                None => {}
+                Some(def) => {
+                    def.write(&mut writer)?;
+                }
+            }
+
+            item.write(&mut writer)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -160,11 +150,24 @@ pub struct FitHeader {
     pub crc: Option<u16>,
 }
 
-#[derive(Debug, BinWrite, Clone)]
+impl FitHeader {
+    fn new(data_size: u32) -> Self {
+        Self {
+            header_size: 14,
+            protocol_version: 0x10,
+            profile_version: 0x5408,
+            data_size,
+            data_type: ".FIT".to_string(),
+            crc: Some(0x0000),
+        }
+    }
+}
+
+#[derive(BinWrite, Debug, Clone, PartialEq)]
 #[bw(little)]
-pub struct FitDefinition {
-    header: FitMessageHeader,
-    message: DefinitionMessage,
+pub struct FitDefinitionMessage {
+    pub header: FitMessageHeader,
+    pub message: DefinitionMessage,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -208,17 +211,24 @@ impl DefinitionMessage {
     }
 }
 
+#[derive(BinWrite, Debug, Clone, PartialEq)]
+#[bw(little)]
+pub struct FitDataMessage {
+    pub header: FitMessageHeader,
+    pub message: DataMessage,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[binrw]
-#[br(import(definition: &FitDefinition))]
+#[br(import(definition: &FitDefinitionMessage))]
 #[bw(little)]
 pub struct DataMessage {
     #[br(parse_with = message_type::parse_message_type, args(definition.message.global_message_number))]
-    #[bw(write_with = message_type::write_message_type)]
+    #[bw(ignore)]
     pub message_type: MessageType,
 
     #[br(parse_with = DataField::parse_data_field, args(message_type, &definition.message.fields), is_little = (definition.message.endian == Endian::Little))]
-    #[bw(write_with = DataField::write_data_field)]
+    #[bw(write_with = DataField::write_data_field, args(message_type.clone()))]
     pub values: Vec<DataField>,
 }
 
@@ -241,7 +251,7 @@ pub struct DevFieldDefinition {
     pub dev_data_index: u8,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, PartialEq)]
 #[binrw]
 #[br(map = FitMessageHeader::from_bytes)]
 #[bw(map = FitMessageHeader::to_bytes)]

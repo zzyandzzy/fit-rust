@@ -24,14 +24,6 @@ where
 {
     read_u8(map) as i8
 }
-
-pub fn write_u8<R>(map: &mut R, b: u8) -> std::io::Result<usize>
-where
-    R: Write + Seek,
-{
-    map.write(&[b])
-}
-
 pub fn read_u16<R>(map: &mut R, endian: Endian) -> u16
 where
     R: Read,

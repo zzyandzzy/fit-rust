@@ -15,22 +15,30 @@ use binrw::{BinResult, Endian};
 use copyless::VecHelper;
 use std::fmt::{Debug, Formatter};
 use std::io::{Read, Seek};
+use tracing::warn;
 
 #[derive(Clone, PartialEq)]
 pub struct DataField {
     pub field_num: u8,
 
-    pub value: Value,
+    pub value: Option<Value>,
 }
 
 impl Debug for DataField {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, " {{ t: {:?}, v: {:?} }}", &self.field_num, &self.value)
+        match &self.value {
+            None => {
+                write!(f, " {{ t: {:?}, v: None }}", &self.field_num)
+            }
+            Some(v) => {
+                write!(f, " {{ t: {:?}, v: {:?} }}", &self.field_num, v)
+            }
+        }
     }
 }
 
 impl DataField {
-    pub fn new(fnum: u8, v: Value) -> Self {
+    pub fn new(fnum: u8, v: Option<Value>) -> Self {
         Self {
             field_num: fnum,
             value: v,
@@ -46,22 +54,21 @@ impl DataField {
         for fd in fields.iter() {
             if message_type == MessageType::None {
                 skip_bytes(reader, fd.size);
-            } else if let Some(data) =
-                DataField::read_next_field(fd.size, fd.base_type, reader, endian)
-            {
-                values
-                    .alloc()
-                    .init(DataField::new(fd.definition_number, data));
+                continue;
             }
+            let data = DataField::read_next_field(fd.size, fd.base_type, reader, endian);
+            values
+                .alloc()
+                .init(DataField::new(fd.definition_number, data));
         }
         // check each value in case the raw value needs further processing
         let scales = get_field_scale_fn(message_type);
         let offsets = get_field_offset_fn(message_type);
         let fields = get_field_type_fn(message_type);
         for v in &mut values {
-            DataField::process_value(v, fields, scales, offsets);
+            DataField::process_read_value(v, fields, scales, offsets);
         }
-        values.shrink_to_fit();
+        // values.shrink_to_fit();
         Ok(values)
     }
 
@@ -79,7 +86,7 @@ impl DataField {
             0 | 13 => {
                 // enum / byte
                 if size > 1 {
-                    println!("0/13:enum/byte: {}", size);
+                    warn!("0/13:enum/byte: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -92,7 +99,7 @@ impl DataField {
             1 => {
                 // sint8
                 if size > 1 {
-                    println!("1 i8: {}", size);
+                    warn!("1 i8: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -124,7 +131,7 @@ impl DataField {
                 // sint16
                 let number_of_values = size / 2;
                 if number_of_values > 1 {
-                    println!("3 i16: {}", size);
+                    warn!("3 i16: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -164,7 +171,7 @@ impl DataField {
                 // sint32
                 let number_of_values = size / 4;
                 if number_of_values > 1 {
-                    println!("5 i32: {}", size);
+                    warn!("5 i32: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -215,7 +222,7 @@ impl DataField {
                 // float32
                 let number_of_values = size / 4;
                 if number_of_values > 1 {
-                    println!("8 f32: {}", size);
+                    warn!("8 f32: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -232,7 +239,7 @@ impl DataField {
                 // float64
                 let number_of_values = size / 8;
                 if number_of_values > 1 {
-                    println!("9 f64: {}", size);
+                    warn!("9 f64: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -248,7 +255,7 @@ impl DataField {
             10 => {
                 // uint8z
                 if size > 1 {
-                    println!("10:uint8z {}", size);
+                    warn!("10:uint8z {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -264,7 +271,7 @@ impl DataField {
                 // uint16z
                 let number_of_values = size / 2;
                 if number_of_values > 1 {
-                    println!("11 u16: {}", size);
+                    warn!("11 u16: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -280,7 +287,7 @@ impl DataField {
                 // uint32z
                 let number_of_values = size / 4;
                 if number_of_values > 1 {
-                    println!("12 u32: {}", size);
+                    warn!("12 u32: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -296,7 +303,7 @@ impl DataField {
                 // sint64
                 let number_of_values = size / 8;
                 if number_of_values > 1 {
-                    println!("14 i64: {}", size);
+                    warn!("14 i64: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -312,7 +319,7 @@ impl DataField {
                 // uint64
                 let number_of_values = size / 8;
                 if number_of_values > 1 {
-                    println!("15 u64: {}", size);
+                    warn!("15 u64: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -328,7 +335,7 @@ impl DataField {
                 // uint64z
                 let number_of_values = size / 8;
                 if number_of_values > 1 {
-                    println!("16 u64: {}", size);
+                    warn!("16 u64: {}", size);
                     skip_bytes(reader, size);
                     None
                 } else {
@@ -345,7 +352,7 @@ impl DataField {
     }
 
     #[allow(unused_must_use)]
-    fn process_value(
+    fn process_read_value(
         v: &mut DataField,
         fields: MatchFieldTypeFn,
         scales: MatchScaleFn,
@@ -354,28 +361,28 @@ impl DataField {
         match fields(v.field_num as usize) {
             FieldType::None => (),
             FieldType::Coordinates => {
-                if let Value::I32(ref inner) = v.value {
+                if let Some(Value::I32(ref inner)) = v.value {
                     let coord = *inner as f32 * COORD_SEMICIRCLES_CALC;
-                    std::mem::replace(&mut v.value, Value::F32(coord));
+                    std::mem::replace(&mut v.value, Some(Value::F32(coord)));
                 }
             }
             FieldType::Timestamp => {
-                if let Value::U32(ref inner) = v.value {
+                if let Some(Value::U32(ref inner)) = v.value {
                     // self.last_timestamp = *inner;
                     let date = *inner + PSEUDO_EPOCH;
-                    std::mem::replace(&mut v.value, Value::Time(date));
+                    std::mem::replace(&mut v.value, Some(Value::Time(date)));
                 }
             }
             FieldType::DateTime => {
-                if let Value::U32(ref inner) = v.value {
+                if let Some(Value::U32(ref inner)) = v.value {
                     let date = *inner + PSEUDO_EPOCH;
-                    std::mem::replace(&mut v.value, Value::Time(date));
+                    std::mem::replace(&mut v.value, Some(Value::Time(date)));
                 }
             }
             FieldType::LocalDateTime => {
-                if let Value::U32(ref inner) = v.value {
+                if let Some(Value::U32(ref inner)) = v.value {
                     let time = *inner + PSEUDO_EPOCH - 3600;
-                    std::mem::replace(&mut v.value, Value::Time(time));
+                    std::mem::replace(&mut v.value, Some(Value::Time(time)));
                 }
             }
             FieldType::String | FieldType::LocaltimeIntoDay => {}
@@ -387,45 +394,86 @@ impl DataField {
             | FieldType::Uint32Z
             | FieldType::Sint8 => {
                 if let Some(s) = scales(v.field_num as usize) {
-                    v.value.scale(s);
+                    match &mut v.value {
+                        None => {}
+                        Some(val) => {
+                            val.scale(s);
+                        }
+                    }
                 }
                 if let Some(o) = offsets(v.field_num as usize) {
-                    v.value.offset(o);
+                    match &mut v.value {
+                        None => {}
+                        Some(val) => {
+                            val.offset(o);
+                        }
+                    }
                 }
             }
             f => {
-                if let Value::U8(k) = v.value {
+                if let Some(Value::U8(k)) = v.value {
                     if let Some(t) = get_field_string_value_fn(f, usize::from(k)) {
-                        std::mem::replace(&mut v.value, Value::Enum(t));
+                        std::mem::replace(&mut v.value, Some(Value::Enum(t)));
                     }
-                } else if let Value::U16(k) = v.value {
+                } else if let Some(Value::U16(k)) = v.value {
                     if let Some(t) = get_field_string_value_fn(f, usize::from(k)) {
-                        std::mem::replace(&mut v.value, Value::Enum(t));
+                        std::mem::replace(&mut v.value, Some(Value::Enum(t)));
                     }
                 }
             }
         }
     }
 
+    fn process_write_value(
+        v: &DataField,
+        fields: MatchFieldTypeFn,
+        scales: MatchScaleFn,
+        offsets: MatchOffsetFn,
+    ) -> Option<Value> {
+        match fields(v.field_num as usize) {
+            FieldType::None => None,
+            FieldType::DateTime => {
+                if let Some(Value::Time(ref inner)) = v.value {
+                    let date = *inner - PSEUDO_EPOCH;
+                    return Some(Value::U32(date));
+                } else {
+                    warn!("{:?}", v);
+                }
+                v.value.clone()
+            }
+            f => v.value.clone(),
+        }
+    }
+
     #[binrw::writer(writer, endian)]
-    pub fn write_data_field(values: &Vec<DataField>) -> BinResult<()> {
+    pub fn write_data_field(values: &Vec<DataField>, message_type: MessageType) -> BinResult<()> {
+        let scales = get_field_scale_fn(message_type);
+        let offsets = get_field_offset_fn(message_type);
+        let fields = get_field_type_fn(message_type);
         for field in values {
-            let _ = match &field.value {
-                Value::U8(v) => write_bin(writer, v, endian),
-                Value::I8(v) => write_bin(writer, v, endian),
-                Value::U16(v) => write_bin(writer, v, endian),
-                Value::I16(v) => write_bin(writer, v, endian),
-                Value::U32(v) => write_bin(writer, v, endian),
-                Value::I32(v) => write_bin(writer, v, endian),
-                Value::U32(v) => write_bin(writer, v, endian),
-                Value::I32(v) => write_bin(writer, v, endian),
-                Value::F32(v) => write_bin(writer, v, endian),
-                Value::F64(v) => write_bin(writer, v, endian),
-                Value::ArrU8(v) => write_bin(writer, v, endian),
-                Value::ArrU16(v) => write_bin(writer, v, endian),
-                Value::ArrU32(v) => write_bin(writer, v, endian),
-                _ => Ok(()),
-            };
+            let value = DataField::process_write_value(field, fields, scales, offsets);
+            match value {
+                None => {}
+                Some(v) => {
+                    let _ = match &v {
+                        Value::U8(v) => write_bin(writer, v, endian),
+                        Value::I8(v) => write_bin(writer, v, endian),
+                        Value::U16(v) => write_bin(writer, v, endian),
+                        Value::I16(v) => write_bin(writer, v, endian),
+                        Value::U32(v) => write_bin(writer, v, endian),
+                        Value::I32(v) => write_bin(writer, v, endian),
+                        Value::U32(v) => write_bin(writer, v, endian),
+                        Value::I32(v) => write_bin(writer, v, endian),
+                        Value::F32(v) => write_bin(writer, v, endian),
+                        Value::F64(v) => write_bin(writer, v, endian),
+                        Value::ArrU8(v) => write_bin(writer, v, endian),
+                        Value::ArrU16(v) => write_bin(writer, v, endian),
+                        Value::ArrU32(v) => write_bin(writer, v, endian),
+                        Value::Time(v) => write_bin(writer, v, endian),
+                        _ => Ok(()),
+                    };
+                }
+            }
         }
         Ok(())
     }

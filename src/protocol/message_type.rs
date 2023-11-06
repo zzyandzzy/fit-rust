@@ -123,11 +123,7 @@ enum_from_primitive! {
 
 #[binrw::writer(writer, endian)]
 pub fn write_message_type(value: &MessageType) -> BinResult<()> {
-    if value == &MessageType::FileId {
-        write_bin(writer, 0xF0F1, endian)?;
-    } else {
-        write_bin(writer, value.to_primitive(), endian)?;
-    }
+    write_bin(writer, value.to_primitive(), endian)?;
     Ok(())
 }
 
