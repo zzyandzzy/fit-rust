@@ -1,5 +1,6 @@
 use crate::protocol::io::write_bin;
 use binrw::BinResult;
+use tracing::warn;
 
 macro_rules! enum_from_primitive {
     ($typ:ident, $t:ty, $($name:ident = $value:expr),+,) => {
@@ -134,7 +135,10 @@ pub fn parse_message_type(value: u16) -> BinResult<MessageType> {
     } else {
         match value {
             0xFF00..=0xFFFE => Ok(MessageType::MfgRange),
-            _ => Ok(MessageType::None),
+            v => {
+                warn!("v: {}, MessageType::None!", v);
+                Ok(MessageType::None)
+            }
         }
     }
 }

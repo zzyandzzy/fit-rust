@@ -17,14 +17,14 @@ use crate::protocol::consts::{
 use crate::protocol::data_field::DataField;
 use crate::protocol::field_type_enum::FieldType;
 use crate::protocol::message_type::MessageType;
-use binrw::{binrw, BinReaderExt, BinResult, BinWrite, Endian};
+use binrw::{binrw, BinRead, BinReaderExt, BinResult, BinWrite, Endian, Error};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::fs::write;
-use std::io::Cursor;
+use std::io::{Cursor, Seek, Write};
 use std::path::Path;
-use tracing::debug;
+use tracing::{debug, error, warn};
 
 pub type MatchScaleFn = fn(usize) -> Option<f32>;
 pub type MatchOffsetFn = fn(usize) -> Option<i16>;
@@ -36,6 +36,8 @@ pub struct Fit {
     pub data: Vec<FitDataMessage>,
 
     map: HashMap<u8, VecDeque<FitDefinitionMessage>>,
+
+    global_def_map: HashMap<u16, DefinitionMessage>,
 }
 
 impl Debug for Fit {
@@ -50,6 +52,7 @@ impl Fit {
         let header: FitHeader = cursor.read_ne()?;
         debug!("header: {:?}", header);
         let mut map: HashMap<u8, VecDeque<FitDefinitionMessage>> = HashMap::new();
+        let mut global_def_map: HashMap<u16, DefinitionMessage> = HashMap::new();
 
         let mut data: Vec<FitDataMessage> = Vec::new();
         loop {
@@ -58,6 +61,10 @@ impl Fit {
                 true => {
                     let definition_message: DefinitionMessage =
                         cursor.read_ne_args((message_header.dev_fields,))?;
+                    global_def_map.insert(
+                        definition_message.global_message_number,
+                        definition_message.clone(),
+                    );
                     map.entry(message_header.local_num)
                         .or_insert_with(VecDeque::new)
                         .push_front(FitDefinitionMessage {
@@ -88,7 +95,12 @@ impl Fit {
                 }
             }
         }
-        Ok(Fit { header, data, map })
+        Ok(Fit {
+            header,
+            data,
+            map,
+            global_def_map,
+        })
     }
 
     pub fn write<P: AsRef<Path>>(&self, path: P) -> BinResult<()> {
@@ -100,6 +112,7 @@ impl Fit {
 
     pub fn write_buf(&self, buf: &mut Vec<u8>) -> BinResult<()> {
         let mut map = self.map.clone();
+        let mut global_def_map: HashMap<u16, DefinitionMessage> = self.global_def_map.clone();
 
         let mut writer = Cursor::new(buf);
         self.header.write(&mut writer)?;
@@ -115,8 +128,26 @@ impl Fit {
                     def.write(&mut writer)?;
                 }
             }
-
-            item.write(&mut writer)?;
+            if &item.message.message_type == &MessageType::None {
+                continue;
+            }
+            let def_msg = global_def_map.get(&item.message.message_type.to_primitive());
+            match def_msg {
+                None => {
+                    error!(
+                        "Error definition message is not define! message type: {:?}",
+                        item.message.message_type
+                    );
+                    return Err(Error::Io(binrw::io::Error::new(
+                        binrw::io::ErrorKind::UnexpectedEof,
+                        "Error definition message is not define!",
+                    )));
+                }
+                Some(def_msg) => {
+                    item.header.write(&mut writer)?;
+                    item.message.write(&mut writer, def_msg)?;
+                }
+            }
         }
         Ok(())
     }
@@ -211,25 +242,34 @@ impl DefinitionMessage {
     }
 }
 
-#[derive(BinWrite, Debug, Clone, PartialEq)]
-#[bw(little)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FitDataMessage {
     pub header: FitMessageHeader,
     pub message: DataMessage,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[binrw]
+#[derive(Clone, Debug, PartialEq, BinRead)]
 #[br(import(definition: &FitDefinitionMessage))]
-#[bw(little)]
 pub struct DataMessage {
     #[br(parse_with = message_type::parse_message_type, args(definition.message.global_message_number))]
-    #[bw(ignore)]
     pub message_type: MessageType,
 
     #[br(parse_with = DataField::parse_data_field, args(message_type, &definition.message.fields), is_little = (definition.message.endian == Endian::Little))]
-    #[bw(write_with = DataField::write_data_field, args(message_type.clone()))]
     pub values: Vec<DataField>,
+}
+
+impl DataMessage {
+    fn write<W>(&self, writer: &mut W, def_msg: &DefinitionMessage) -> BinResult<()>
+    where
+        W: Write + Seek,
+    {
+        DataField::write_data_field(
+            &self.values,
+            writer,
+            Endian::Little,
+            (self.message_type, def_msg),
+        )
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
