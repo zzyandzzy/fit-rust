@@ -16,15 +16,16 @@ use crate::protocol::consts::{
 };
 use crate::protocol::data_field::DataField;
 use crate::protocol::field_type_enum::FieldType;
+use crate::protocol::io::{skip_bytes, write_bin};
 use crate::protocol::message_type::MessageType;
-use binrw::{binrw, BinRead, BinReaderExt, BinResult, BinWrite, Endian, Error};
+use binrw::{binrw, BinRead, BinReaderExt, BinResult, BinWrite, BinWriterExt, Endian, Error};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::fs::write;
-use std::io::{Cursor, Seek, Write};
+use std::io::{Cursor, Seek, SeekFrom, Write};
 use std::path::Path;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 
 pub type MatchScaleFn = fn(usize) -> Option<f32>;
 pub type MatchOffsetFn = fn(usize) -> Option<i16>;
@@ -115,12 +116,12 @@ impl Fit {
         let mut global_def_map: HashMap<u16, DefinitionMessage> = self.global_def_map.clone();
 
         let mut writer = Cursor::new(buf);
-        self.header.write(&mut writer)?;
+        skip_bytes(&mut writer, self.header.header_size);
 
         for item in &self.data {
-            let mut definition_message = match map.get_mut(&item.header.local_num) {
+            let definition_message = match map.get_mut(&item.header.local_num) {
                 None => continue,
-                Some(mut queue) => queue.pop_back(),
+                Some(queue) => queue.pop_back(),
             };
             match definition_message {
                 None => {}
@@ -149,11 +150,18 @@ impl Fit {
                 }
             }
         }
+        let crc: Vec<u8> = vec![0xAA, 0x55];
+        write_bin(&mut writer, crc, Endian::Little)?;
+        let mut header = self.header.clone();
+        header.data_size = writer.position() as u32 - 14 - 2;
+        writer.seek(SeekFrom::Start(0))?;
+        header.write(&mut writer)?;
+        writer.flush()?;
         Ok(())
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[binrw]
 #[brw(little)]
 pub struct FitHeader {

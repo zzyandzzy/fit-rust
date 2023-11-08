@@ -10,7 +10,7 @@ mod protocol;
 
 fn main() -> BinResult<()> {
     init_logger();
-    let file = read("./tests/2015-06-09-21-12-06.fit").unwrap();
+    let file = read("./tests/test1.fit").unwrap();
     let fit: Fit = Fit::read(file)?;
     for data in &fit.data {
         match data.message.message_type {
@@ -21,6 +21,6 @@ fn main() -> BinResult<()> {
             _ => {}
         }
     }
-    fit.write("./tests/test.fit")?;
+    // fit.write("./tests/test1.fit")?;
     Ok(())
 }

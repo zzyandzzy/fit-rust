@@ -16,7 +16,7 @@ use crate::protocol::{
 use binrw::{BinResult, Endian};
 use copyless::VecHelper;
 use std::fmt::{Debug, Formatter};
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, Write};
 use tracing::warn;
 
 #[derive(Clone, PartialEq)]
@@ -53,23 +53,27 @@ impl DataField {
         fields: &Vec<FieldDefinition>,
     ) -> BinResult<Vec<DataField>> {
         let mut values = Vec::with_capacity(fields.len());
-        for fd in fields.iter() {
-            if message_type == MessageType::None {
-                skip_bytes(reader, fd.size);
-                warn!("message_type == MessageType::None, skip_bytes: {}", fd.size);
-                continue;
+        if message_type == MessageType::None {
+            let size_sum: u8 = fields.iter().map(|field| field.size).sum();
+            warn!(
+                "message_type == MessageType::None, skip_bytes: {}",
+                size_sum
+            );
+            skip_bytes(reader, size_sum);
+        } else {
+            for fd in fields.iter() {
+                let data = DataField::read_next_field(fd.size, fd.base_type, reader, endian);
+                values
+                    .alloc()
+                    .init(DataField::new(fd.definition_number, data));
             }
-            let data = DataField::read_next_field(fd.size, fd.base_type, reader, endian);
-            values
-                .alloc()
-                .init(DataField::new(fd.definition_number, data));
-        }
-        // check each value in case the raw value needs further processing
-        let scales = get_field_scale_fn(message_type);
-        let offsets = get_field_offset_fn(message_type);
-        let fields = get_field_type_fn(message_type);
-        for v in &mut values {
-            DataField::process_read_value(v, fields, scales, offsets);
+            // check each value in case the raw value needs further processing
+            let scales = get_field_scale_fn(message_type);
+            let offsets = get_field_offset_fn(message_type);
+            let fields = get_field_type_fn(message_type);
+            for v in &mut values {
+                DataField::process_read_value(v, fields, scales, offsets);
+            }
         }
         // values.shrink_to_fit();
         Ok(values)
@@ -302,11 +306,11 @@ impl DataField {
                     let date = *inner - PSEUDO_EPOCH;
                     return Some(Value::U32(date));
                 } else {
-                    warn!("{:?}", v);
+                    warn!("FieldType::DateTime {:?}", v);
                 }
                 v.value.clone()
             }
-            f => v.value.clone(),
+            _ => v.value.clone(),
         }
     }
 
@@ -324,18 +328,7 @@ impl DataField {
             match value {
                 None => {
                     let def_field = def_msg.fields.get(i);
-                    match def_field {
-                        None => {
-                            warn!("Can not write from None!");
-                        }
-                        Some(def_field) => {
-                            let mut vec: Vec<u8> = Vec::with_capacity(def_field.size as usize);
-                            for i in 0..=def_field.size {
-                                vec.push(0xFF);
-                            }
-                            let _ = write_bin(writer, vec, endian);
-                        }
-                    }
+                    DataField::write_none(writer, endian, def_field);
                 }
                 Some(v) => {
                     let _ = match &v {
@@ -354,11 +347,33 @@ impl DataField {
                         Value::ArrU32(v) => write_bin(writer, v, endian),
                         Value::Time(v) => write_bin(writer, v, endian),
                         Value::String(v) => write_bin(writer, v.as_bytes(), endian),
+                        Value::Enum(v) => {
+                            let def_field = def_msg.fields.get(i);
+                            Ok(DataField::write_none(writer, endian, def_field))
+                        }
                         _ => Ok(()),
                     };
                 }
-            }
+            };
         }
         Ok(())
+    }
+
+    fn write_none<W>(writer: &mut W, endian: Endian, def_field: Option<&FieldDefinition>)
+    where
+        W: Write + Seek,
+    {
+        match def_field {
+            None => {
+                warn!("Can not write from None!");
+            }
+            Some(def_field) => {
+                let mut vec: Vec<u8> = Vec::with_capacity(def_field.size as usize);
+                for _ in 0..=def_field.size - 1 {
+                    vec.push(0xFF);
+                }
+                let _ = write_bin(writer, vec, endian);
+            }
+        }
     }
 }
