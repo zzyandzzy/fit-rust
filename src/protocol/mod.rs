@@ -11,7 +11,7 @@ mod value;
 
 use crate::protocol::consts::{
     COMPRESSED_HEADER_LOCAL_MESSAGE_NUMBER_MASK, COMPRESSED_HEADER_MASK,
-    COMPRESSED_HEADER_TIME_OFFSET_MASK, DEFINITION_HEADER_MASK, DEVELOPER_FIELDS_MASK,
+    COMPRESSED_HEADER_TIME_OFFSET_MASK, CRC_TABLE, DEFINITION_HEADER_MASK, DEVELOPER_FIELDS_MASK,
     FIELD_DEFINITION_BASE_NUMBER, LOCAL_MESSAGE_NUMBER_MASK,
 };
 use crate::protocol::data_field::DataField;
@@ -22,10 +22,10 @@ use binrw::{binrw, BinRead, BinReaderExt, BinResult, BinWrite, Endian, Error};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
-use std::fs::write;
-use std::io::{Cursor, Seek, SeekFrom, Write};
+use std::fs::{read, write};
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 pub type MatchScaleFn = fn(usize) -> Option<f32>;
 pub type MatchOffsetFn = fn(usize) -> Option<i16>;
@@ -78,9 +78,13 @@ impl Fit {
                         None => continue,
                         Some(queue) => queue.front().unwrap(),
                     };
-                    debug!("definition: {:?}", definition);
                     let data_message: DataMessage = cursor.read_ne_args((definition,))?;
+                    debug!("definition: {:?}", definition);
                     debug!("massage: {:?}", data_message);
+                    if data_message.message_type == MessageType::None {
+                        debug!("message is None, continue");
+                        continue;
+                    }
                     data.push(FitDataMessage {
                         header: message_header,
                         message: data_message,
@@ -104,20 +108,43 @@ impl Fit {
         })
     }
 
-    pub fn write<P: AsRef<Path>>(&self, path: P) -> BinResult<()> {
-        let mut buf = Vec::new();
-        self.write_buf(&mut buf)?;
-        write(path, &buf)?;
+    pub fn write<P: AsRef<Path>>(&self, file: P) -> BinResult<()> {
+        let mut buf = Vec::with_capacity(
+            (self.header.data_size + self.header.header_size as u32 + 2) as usize,
+        );
+        let header = self.write_buf(&mut buf)?;
+        Fit::write_crc(header, &mut buf)?;
+        write(file, &buf)?;
         Ok(())
     }
 
-    pub fn write_buf(&self, buf: &mut Vec<u8>) -> BinResult<()> {
+    fn write_crc(header: FitHeader, buf: &mut Vec<u8>) -> BinResult<()> {
+        let mut header_crc: Option<u16> = None;
+        if header.crc.is_some() {
+            let header = &buf[0..(header.header_size - 2) as usize];
+            header_crc = Some(calculate_fit_crc(&header));
+        }
+        let end_byte = header.header_size as u32 + header.data_size;
+        let body = &buf[header.header_size as usize..end_byte as usize];
+        let body_crc = calculate_fit_crc(&body);
+        let mut writer = Cursor::new(buf);
+        if header_crc.is_some() {
+            writer.seek(SeekFrom::Start(header.header_size as u64 - 2))?;
+            debug!("header crc: 0x{:X}", header_crc.unwrap());
+            write_bin(&mut writer, header_crc.unwrap(), Endian::Little)?;
+        }
+        debug!("body crc: 0x{:X}", body_crc);
+        writer.seek(SeekFrom::End(0))?;
+        write_bin(&mut writer, body_crc, Endian::Little)?;
+        writer.flush()?;
+        Ok(())
+    }
+
+    pub(crate) fn write_buf(&self, buf: &mut Vec<u8>) -> BinResult<FitHeader> {
         let mut map = self.map.clone();
         let global_def_map: HashMap<u16, DefinitionMessage> = self.global_def_map.clone();
-
         let mut writer = Cursor::new(buf);
         skip_bytes(&mut writer, self.header.header_size);
-
         for item in &self.data {
             let definition_message = match map.get_mut(&item.header.local_num) {
                 None => continue,
@@ -150,14 +177,32 @@ impl Fit {
                 }
             }
         }
-        let crc: Vec<u8> = vec![0xAA, 0x55];
-        write_bin(&mut writer, crc, Endian::Little)?;
         let mut header = self.header.clone();
-        header.data_size = writer.position() as u32 - 14 - 2;
+        header.data_size = writer.position() as u32 - header.header_size as u32 - 2;
         writer.seek(SeekFrom::Start(0))?;
         header.write(&mut writer)?;
         writer.flush()?;
-        Ok(())
+        Ok(header)
+    }
+
+    pub fn merge<P: AsRef<Path>>(files: Vec<P>, path: P) -> BinResult<()> {
+        if files.is_empty() || files.len() <= 1 {
+            error!("Error files is empty: {:?}", files.len());
+            return Err(Error::Io(binrw::io::Error::new(
+                binrw::io::ErrorKind::UnexpectedEof,
+                "Error files is empty!",
+            )));
+        }
+        let file = read(files.get(0).unwrap()).unwrap();
+        let mut fit: Fit = Fit::read(file)?;
+        for i in 1..=files.len() - 1 {
+            let f = files.get(i).unwrap();
+            let f = read(f).unwrap();
+            let mut tmp = Fit::read(f)?;
+            fit.data.append(&mut tmp.data);
+        }
+
+        fit.write(path)
     }
 }
 
@@ -334,31 +379,53 @@ impl FitMessageHeader {
     }
 }
 
+pub(crate) fn fit_crc_get16(crc: u16, byte: u8) -> u16 {
+    // Compute checksum of lower four bits of byte
+    let mut tmp = CRC_TABLE[(crc & 0xF) as usize];
+    let mut crc = (crc >> 4) & 0x0FFF;
+    crc = crc ^ tmp ^ CRC_TABLE[(byte & 0xF) as usize];
+
+    // Now compute checksum of upper four bits of byte
+    tmp = CRC_TABLE[(crc & 0xF) as usize];
+    crc = (crc >> 4) & 0x0FFF;
+    crc = crc ^ tmp ^ CRC_TABLE[((byte >> 4) & 0xF) as usize];
+
+    crc
+}
+
+pub(crate) fn calculate_fit_crc(header: &[u8]) -> u16 {
+    let mut crc: u16 = 0;
+    for &byte in header {
+        crc = fit_crc_get16(crc, byte);
+    }
+    crc
+}
+
 #[cfg(test)]
 mod tests {
-
-    const CRC_TABLE: [u16; 16] = [
-        0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401, 0xA001, 0x6C00, 0x7800,
-        0xB401, 0x5000, 0x9C01, 0x8801, 0x4400,
-    ];
-
-    fn fit_crc_get16(crc: u16, byte: u8) -> u16 {
-        // Compute checksum of lower four bits of byte
-        let mut tmp = CRC_TABLE[(crc & 0xF) as usize];
-        let mut crc = (crc >> 4) & 0x0FFF;
-        crc = crc ^ tmp ^ CRC_TABLE[(byte & 0xF) as usize];
-
-        // Now compute checksum of upper four bits of byte
-        tmp = CRC_TABLE[(crc & 0xF) as usize];
-        crc = (crc >> 4) & 0x0FFF;
-        crc = crc ^ tmp ^ CRC_TABLE[((byte >> 4) & 0xF) as usize];
-
-        crc
-    }
+    use crate::protocol::calculate_fit_crc;
 
     #[test]
     fn fit_crc_get16_test() {
-        let crc = fit_crc_get16(0x0587, 0x2);
-        println!("CRC: 0x{:04X}", crc);
+        let example_header: [u8; 12] = [
+            0x0E, 0x10, 0x90, 0x05, 0xB3, 0x10, 0x00, 0x00, 0x2E, 0x46, 0x49, 0x54,
+        ];
+        let header_crc = calculate_fit_crc(&example_header);
+        println!("The CRC of the FIT header is: 0x{:X}", header_crc);
+        assert_eq!(0x800, header_crc);
+    }
+
+    #[test]
+    fn fit_crc_test() {
+        let buf = std::fs::read("./tests/2015-06-09-21-12-06.fit").unwrap();
+        let header = &buf[0..12];
+        let header_crc = calculate_fit_crc(&header);
+        println!("The CRC of the FIT header is: 0x{:X}", header_crc);
+        assert_eq!(0x800, header_crc);
+        let end_byte = buf.len() - 2;
+        let body = &buf[14..end_byte];
+        let body_crc = calculate_fit_crc(&body);
+        println!("The CRC of the FIT body is: 0x{:X}", body_crc);
+        assert_eq!(0x0CA1, header_crc);
     }
 }

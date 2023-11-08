@@ -92,14 +92,24 @@ impl DataField {
         match base_type {
             0 | 13 => {
                 // enum / byte
-                match read_u8(reader) {
-                    v => Some(Value::U8(v)),
+                if size > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    match read_u8(reader) {
+                        v => Some(Value::U8(v)),
+                    }
                 }
             }
             1 => {
                 // sint8
-                match read_i8(reader) {
-                    v => Some(Value::I8(v)),
+                if size > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    match read_i8(reader) {
+                        v => Some(Value::I8(v)),
+                    }
                 }
             }
             2 => {
@@ -116,8 +126,14 @@ impl DataField {
             }
             3 => {
                 // sint16
-                let val = read_i16(reader, endian);
-                Some(Value::I16(val))
+                let number_of_values = size / 2;
+                if number_of_values > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    let val = read_i16(reader, endian);
+                    Some(Value::I16(val))
+                }
             }
             4 => {
                 // uint16
@@ -141,8 +157,14 @@ impl DataField {
             }
             5 => {
                 // sint32
-                let val = read_i32(reader, endian);
-                Some(Value::I32(val))
+                let number_of_values = size / 4;
+                if number_of_values > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    let val = read_i32(reader, endian);
+                    Some(Value::I32(val))
+                }
             }
             6 => {
                 // uint32
@@ -176,45 +198,92 @@ impl DataField {
             }
             8 => {
                 // float32
-                let uval = read_u32(reader, endian);
-                let val = f32::from_bits(uval);
-                Some(Value::F32(val))
+                let number_of_values = size / 4;
+                if number_of_values > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    let uval = read_u32(reader, endian);
+                    let val = f32::from_bits(uval);
+                    Some(Value::F32(val))
+                }
             }
             9 => {
                 // float64
-                let uval = read_u64(reader, endian);
-                let val = f64::from_bits(uval);
-                Some(Value::F64(val))
+                let number_of_values = size / 8;
+                if number_of_values > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    let uval = read_u64(reader, endian);
+                    let val = f64::from_bits(uval);
+                    Some(Value::F64(val))
+                }
             }
             10 => {
                 // uint8z
-                let val = read_u8(reader);
-                Some(Value::U8(val))
+                if size > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    let val = read_u8(reader);
+                    Some(Value::U8(val))
+                }
             }
             11 => {
                 // uint16z
-                let val = read_u16(reader, endian);
-                Some(Value::U16(val))
+                let number_of_values = size / 2;
+                if number_of_values > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    let val = read_u16(reader, endian);
+                    Some(Value::U16(val))
+                }
             }
             12 => {
                 // uint32z
-                let val = read_u32(reader, endian);
-                Some(Value::U32(val))
+                let number_of_values = size / 4;
+                if number_of_values > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    let val = read_u32(reader, endian);
+                    Some(Value::U32(val))
+                }
             }
             14 => {
                 // sint64
-                let val = read_i64(reader, endian);
-                Some(Value::I64(val))
+                let number_of_values = size / 8;
+                if number_of_values > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    let val = read_i64(reader, endian);
+                    Some(Value::I64(val))
+                }
             }
             15 => {
                 // uint64
-                let val = read_u64(reader, endian);
-                Some(Value::U64(val))
+                let number_of_values = size / 8;
+                if number_of_values > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    let val = read_u64(reader, endian);
+                    Some(Value::U64(val))
+                }
             }
             16 => {
                 // uint64z
-                let val = read_u64(reader, endian);
-                Some(Value::U64(val))
+                let number_of_values = size / 8;
+                if number_of_values > 1 {
+                    skip_bytes(reader, size);
+                    None
+                } else {
+                    let val = read_u64(reader, endian);
+                    Some(Value::U64(val))
+                }
             }
             _ => None,
         }
@@ -237,7 +306,6 @@ impl DataField {
             }
             FieldType::Timestamp | FieldType::DateTime => {
                 if let Some(Value::U32(ref inner)) = v.value {
-                    // self.last_timestamp = *inner;
                     let date = *inner + PSEUDO_EPOCH;
                     std::mem::replace(&mut v.value, Some(Value::Time(date)));
                 }
@@ -411,10 +479,7 @@ impl DataField {
                 warn!("Can not write from None!");
             }
             Some(def_field) => {
-                let mut vec: Vec<u8> = Vec::with_capacity(def_field.size as usize);
-                for _ in 0..=def_field.size - 1 {
-                    vec.push(0xFF);
-                }
+                let vec: Vec<u8> = vec![0; def_field.size as usize];
                 let _ = write_bin(writer, vec, endian);
             }
         }

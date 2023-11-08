@@ -1,3 +1,8 @@
+pub const CRC_TABLE: [u16; 16] = [
+    0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401, 0xA001, 0x6C00, 0x7800, 0xB401,
+    0x5000, 0x9C01, 0x8801, 0x4400,
+];
+
 pub const COMPRESSED_HEADER_MASK: u8 = 0b1000_0000; // MASK: determine if the header has compressed timestamp
 pub const COMPRESSED_HEADER_LOCAL_MESSAGE_NUMBER_MASK: u8 = 0b0110_0000; // MASK: Extract message number from a compressed header
 pub const COMPRESSED_HEADER_TIME_OFFSET_MASK: u8 = 0b0001_1111; // MASK: Extract timestamp offset from a compressed header
