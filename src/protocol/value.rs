@@ -24,6 +24,36 @@ pub enum Value {
 
 #[allow(unused_must_use)]
 impl Value {
+    pub(super) fn rescale(&mut self, val: f32) {
+        match self {
+            Value::U8(mut inner) => {
+                let new_inner = f32::from(inner) * val;
+                std::mem::replace(&mut inner, new_inner as u8);
+            }
+            Value::I8(mut inner) => {
+                let new_inner = f32::from(inner) * val;
+                std::mem::replace(&mut inner, new_inner as i8);
+            }
+            Value::U16(mut inner) => {
+                let new_inner = f32::from(inner) * val;
+                std::mem::replace(&mut inner, new_inner as u16);
+            }
+            Value::I16(mut inner) => {
+                let new_inner = f32::from(inner) * val;
+                std::mem::replace(&mut inner, new_inner as i16);
+            }
+            Value::U32(mut inner) => {
+                let new_inner = inner as f32 * val;
+                std::mem::replace(&mut inner, new_inner as u32);
+            }
+            Value::I32(mut inner) => {
+                let new_inner = inner as f32 * val;
+                std::mem::replace(&mut inner, new_inner as i32);
+            }
+            _ => (),
+        }
+    }
+
     pub(super) fn scale(&mut self, val: f32) {
         match self {
             Value::U8(mut inner) => {
@@ -77,6 +107,36 @@ impl Value {
             }
             Value::I32(mut inner) => {
                 let new_inner = inner as i16 - val;
+                std::mem::replace(&mut inner, i32::from(new_inner));
+            }
+            _ => (),
+        }
+    }
+
+    pub(super) fn reoffset(&mut self, val: i16) {
+        match self {
+            Value::U8(mut inner) => {
+                let new_inner = i16::from(inner) + val;
+                std::mem::replace(&mut inner, new_inner as u8);
+            }
+            Value::I8(mut inner) => {
+                let new_inner = i16::from(inner) + val;
+                std::mem::replace(&mut inner, new_inner as i8);
+            }
+            Value::U16(mut inner) => {
+                let new_inner = inner as i16 + val;
+                std::mem::replace(&mut inner, new_inner as u16);
+            }
+            Value::I16(mut inner) => {
+                let new_inner = inner + val;
+                std::mem::replace(&mut inner, new_inner);
+            }
+            Value::U32(mut inner) => {
+                let new_inner = inner as i16 + val;
+                std::mem::replace(&mut inner, new_inner as u32);
+            }
+            Value::I32(mut inner) => {
+                let new_inner = inner as i16 + val;
                 std::mem::replace(&mut inner, i32::from(new_inner));
             }
             _ => (),

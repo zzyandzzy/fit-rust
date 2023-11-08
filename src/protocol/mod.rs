@@ -18,7 +18,7 @@ use crate::protocol::data_field::DataField;
 use crate::protocol::field_type_enum::FieldType;
 use crate::protocol::io::{skip_bytes, write_bin};
 use crate::protocol::message_type::MessageType;
-use binrw::{binrw, BinRead, BinReaderExt, BinResult, BinWrite, BinWriterExt, Endian, Error};
+use binrw::{binrw, BinRead, BinReaderExt, BinResult, BinWrite, Endian, Error};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -113,7 +113,7 @@ impl Fit {
 
     pub fn write_buf(&self, buf: &mut Vec<u8>) -> BinResult<()> {
         let mut map = self.map.clone();
-        let mut global_def_map: HashMap<u16, DefinitionMessage> = self.global_def_map.clone();
+        let global_def_map: HashMap<u16, DefinitionMessage> = self.global_def_map.clone();
 
         let mut writer = Cursor::new(buf);
         skip_bytes(&mut writer, self.header.header_size);
@@ -187,19 +187,6 @@ pub struct FitHeader {
     /// Contains the value of the CRC (see CRC ) of Bytes 0 through 11, or may be set to 0x0000. This field is optional.
     #[br(if(header_size == 14))]
     pub crc: Option<u16>,
-}
-
-impl FitHeader {
-    fn new(data_size: u32) -> Self {
-        Self {
-            header_size: 14,
-            protocol_version: 0x10,
-            profile_version: 0x5408,
-            data_size,
-            data_type: ".FIT".to_string(),
-            crc: Some(0x0000),
-        }
-    }
 }
 
 #[derive(BinWrite, Debug, Clone, PartialEq)]

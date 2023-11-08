@@ -1,7 +1,9 @@
 pub const COMPRESSED_HEADER_MASK: u8 = 0b1000_0000; // MASK: determine if the header has compressed timestamp
 pub const COMPRESSED_HEADER_LOCAL_MESSAGE_NUMBER_MASK: u8 = 0b0110_0000; // MASK: Extract message number from a compressed header
 pub const COMPRESSED_HEADER_TIME_OFFSET_MASK: u8 = 0b0001_1111; // MASK: Extract timestamp offset from a compressed header
+#[allow(unused)]
 pub const COMPRESSED_HEADER_TIME_OFFSET_ROLLOVER: u32 = 0b0010_0000; // Compressed header: rollover to eventually add when computing the new timestamp
+#[allow(unused)]
 pub const COMPRESSED_HEADER_LAST_TIMESTAMP_MASK: u32 = 0xFFFF_FFE0; // Compressed header: mask to apply to the previous timestamp before adding the time offset
 
 pub const DEFINITION_HEADER_MASK: u8 = 0x40;

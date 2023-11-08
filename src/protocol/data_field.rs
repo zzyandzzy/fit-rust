@@ -235,15 +235,9 @@ impl DataField {
                     std::mem::replace(&mut v.value, Some(Value::F32(coord)));
                 }
             }
-            FieldType::Timestamp => {
+            FieldType::Timestamp | FieldType::DateTime => {
                 if let Some(Value::U32(ref inner)) = v.value {
                     // self.last_timestamp = *inner;
-                    let date = *inner + PSEUDO_EPOCH;
-                    std::mem::replace(&mut v.value, Some(Value::Time(date)));
-                }
-            }
-            FieldType::DateTime => {
-                if let Some(Value::U32(ref inner)) = v.value {
                     let date = *inner + PSEUDO_EPOCH;
                     std::mem::replace(&mut v.value, Some(Value::Time(date)));
                 }
@@ -301,16 +295,67 @@ impl DataField {
     ) -> Option<Value> {
         match fields(v.field_num as usize) {
             FieldType::None => None,
-            FieldType::DateTime => {
+            FieldType::Coordinates => {
+                if let Some(Value::F32(ref inner)) = v.value {
+                    let coord = *inner / COORD_SEMICIRCLES_CALC;
+                    return Some(Value::I32(coord as i32));
+                }
+                None
+            }
+            FieldType::DateTime | FieldType::Timestamp => {
                 if let Some(Value::Time(ref inner)) = v.value {
                     let date = *inner - PSEUDO_EPOCH;
                     return Some(Value::U32(date));
-                } else {
-                    warn!("FieldType::DateTime {:?}", v);
                 }
-                v.value.clone()
+                None
             }
-            _ => v.value.clone(),
+            FieldType::LocalDateTime => {
+                if let Some(Value::Time(ref inner)) = v.value {
+                    let date = *inner - PSEUDO_EPOCH + 3600;
+                    return Some(Value::U32(date));
+                }
+                None
+            }
+            FieldType::String | FieldType::LocaltimeIntoDay => v.clone().value,
+            FieldType::Uint8
+            | FieldType::Uint8Z
+            | FieldType::Uint16
+            | FieldType::Uint16Z
+            | FieldType::Uint32
+            | FieldType::Uint32Z
+            | FieldType::Sint8 => {
+                let mut v = v.clone();
+                if let Some(s) = scales(v.field_num as usize) {
+                    match &mut v.value {
+                        None => {}
+                        Some(val) => {
+                            val.rescale(s);
+                        }
+                    }
+                }
+                if let Some(o) = offsets(v.field_num as usize) {
+                    match &mut v.value {
+                        None => {}
+                        Some(val) => {
+                            val.reoffset(o);
+                        }
+                    }
+                }
+                v.value
+            }
+            _ => {
+                let v = v.clone();
+                // if let Some(Value::U8(k)) = v.value {
+                //     if let Some(t) = get_field_string_value_fn(f, usize::from(k)) {
+                //         std::mem::replace(&mut v.value, Some(Value::Enum(t)));
+                //     }
+                // } else if let Some(Value::U16(k)) = v.value {
+                //     if let Some(t) = get_field_string_value_fn(f, usize::from(k)) {
+                //         std::mem::replace(&mut v.value, Some(Value::Enum(t)));
+                //     }
+                // }
+                v.value
+            }
         }
     }
 
@@ -338,8 +383,6 @@ impl DataField {
                         Value::I16(v) => write_bin(writer, v, endian),
                         Value::U32(v) => write_bin(writer, v, endian),
                         Value::I32(v) => write_bin(writer, v, endian),
-                        Value::U32(v) => write_bin(writer, v, endian),
-                        Value::I32(v) => write_bin(writer, v, endian),
                         Value::F32(v) => write_bin(writer, v, endian),
                         Value::F64(v) => write_bin(writer, v, endian),
                         Value::ArrU8(v) => write_bin(writer, v, endian),
@@ -347,7 +390,7 @@ impl DataField {
                         Value::ArrU32(v) => write_bin(writer, v, endian),
                         Value::Time(v) => write_bin(writer, v, endian),
                         Value::String(v) => write_bin(writer, v.as_bytes(), endian),
-                        Value::Enum(v) => {
+                        Value::Enum(_) => {
                             let def_field = def_msg.fields.get(i);
                             Ok(DataField::write_none(writer, endian, def_field))
                         }

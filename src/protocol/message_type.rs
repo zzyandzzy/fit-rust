@@ -122,6 +122,7 @@ enum_from_primitive! {
     None = 0xFFFF,
 }
 
+#[allow(unused)]
 #[binrw::writer(writer, endian)]
 pub fn write_message_type(value: &MessageType) -> BinResult<()> {
     write_bin(writer, value.to_primitive(), endian)?;
