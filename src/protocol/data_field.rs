@@ -63,7 +63,7 @@ impl DataField {
             skip_bytes(reader, size_sum);
         } else {
             for fd in fields.iter() {
-                let data = DataField::read_next_field(fd.size, fd.base_type, reader, endian);
+                let data = DataField::read_next_field(fd.size, fd.base_type.val, reader, endian);
                 values
                     .alloc()
                     .init(DataField::new(fd.definition_number, data));

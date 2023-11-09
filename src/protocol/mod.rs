@@ -11,7 +11,7 @@ pub mod value;
 use crate::protocol::consts::{
     COMPRESSED_HEADER_LOCAL_MESSAGE_NUMBER_MASK, COMPRESSED_HEADER_MASK,
     COMPRESSED_HEADER_TIME_OFFSET_MASK, CRC_TABLE, DEFINITION_HEADER_MASK, DEVELOPER_FIELDS_MASK,
-    FIELD_DEFINITION_BASE_NUMBER, LOCAL_MESSAGE_NUMBER_MASK,
+    FIELD_DEFINITION_BASE_ENDIAN, FIELD_DEFINITION_BASE_NUMBER, LOCAL_MESSAGE_NUMBER_MASK,
 };
 use crate::protocol::data_field::DataField;
 use crate::protocol::get_field_string_value::FieldType;
@@ -327,8 +327,38 @@ pub struct FieldDefinition {
 
     pub size: u8,
 
-    #[br(map = | x: u8 | x & FIELD_DEFINITION_BASE_NUMBER)]
-    pub base_type: u8,
+    pub base_type: FieldDefBaseType,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[binrw]
+#[br(map = FieldDefBaseType::from_bytes)]
+#[bw(map = FieldDefBaseType::to_bytes)]
+pub struct FieldDefBaseType {
+    pub val: u8,
+
+    pub endian: Endian,
+}
+
+impl FieldDefBaseType {
+    fn to_bytes(&self) -> u8 {
+        if self.endian == Endian::Little {
+            self.val
+        } else {
+            self.val | FIELD_DEFINITION_BASE_ENDIAN
+        }
+    }
+
+    fn from_bytes(x: u8) -> FieldDefBaseType {
+        let mut endian = Endian::Little;
+        if x & FIELD_DEFINITION_BASE_ENDIAN == FIELD_DEFINITION_BASE_ENDIAN {
+            endian = Endian::Big;
+        }
+        Self {
+            val: x & FIELD_DEFINITION_BASE_NUMBER,
+            endian,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]

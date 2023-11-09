@@ -11,29 +11,29 @@ mod protocol;
 
 fn main() -> BinResult<()> {
     init_logger();
-    let file = read("./tests/ride-1-2023-11-07-21-20-25.fit").unwrap();
-    let fit: Fit = Fit::read(file)?;
-    for data in &fit.data {
-        match data.message.message_type {
-            MessageType::Record => {
-                // print_record(data);
-            }
-            //         MessageType::None => {}
-            f => {
-                info!("{:?}: {:?}", f, data.message.values);
-            }
-        }
-    }
-    fit.write("./tests/ride-1.fit")?;
+    // let file = read("./tests/ride-1-2023-11-07-21-20-25.fit").unwrap();
+    // let fit: Fit = Fit::read(file)?;
+    // for data in &fit.data {
+    //     match data.message.message_type {
+    //         MessageType::Record => {
+    //             // print_record(data);
+    //         }
+    //         //         MessageType::None => {}
+    //         f => {
+    //             info!("{:?}: {:?}", f, data.message.values);
+    //         }
+    //     }
+    // }
+    // fit.write("./tests/ride-1.fit")?;
 
-    // Fit::merge(
-    //     vec![
-    //         "./tests/ride-0-2023-09-29-09-41-54.fit",
-    //         "./tests/ride-0-2023-09-29-12-49-21.fit",
-    //         "./tests/ride-0-2023-09-29-18-57-47.fit",
-    //     ],
-    //     "./tests/merge.fit",
-    // )?;
+    Fit::merge(
+        vec![
+            "./tests/ride-0-2023-09-29-09-41-54.fit",
+            "./tests/ride-0-2023-09-29-12-49-21.fit",
+            "./tests/ride-0-2023-09-29-18-57-47.fit",
+        ],
+        "./tests/merge.fit",
+    )?;
 
     Ok(())
 }
