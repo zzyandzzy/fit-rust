@@ -1,6 +1,5 @@
 mod consts;
 mod data_field;
-pub mod field_type_enum;
 mod get_field_offset;
 mod get_field_scale;
 mod get_field_string_value;
@@ -15,7 +14,7 @@ use crate::protocol::consts::{
     FIELD_DEFINITION_BASE_NUMBER, LOCAL_MESSAGE_NUMBER_MASK,
 };
 use crate::protocol::data_field::DataField;
-use crate::protocol::field_type_enum::FieldType;
+use crate::protocol::get_field_string_value::FieldType;
 use crate::protocol::io::{skip_bytes, write_bin};
 use crate::protocol::message_type::MessageType;
 use binrw::{binrw, BinRead, BinReaderExt, BinResult, BinWrite, Endian, Error};
@@ -23,9 +22,9 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::fs::{read, write};
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, Seek, SeekFrom, Write};
 use std::path::Path;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 
 pub type MatchScaleFn = fn(usize) -> Option<f32>;
 pub type MatchOffsetFn = fn(usize) -> Option<i16>;
@@ -60,6 +59,9 @@ impl Fit {
             let message_header: FitMessageHeader = cursor.read_ne()?;
             match message_header.definition {
                 true => {
+                    if message_header.dev_fields {
+                        unimplemented!("message_header.dev_fields is unimplemented");
+                    }
                     let definition_message: DefinitionMessage =
                         cursor.read_ne_args((message_header.dev_fields,))?;
                     global_def_map.insert(
@@ -79,12 +81,12 @@ impl Fit {
                         Some(queue) => queue.front().unwrap(),
                     };
                     let data_message: DataMessage = cursor.read_ne_args((definition,))?;
-                    debug!("definition: {:?}", definition);
-                    debug!("massage: {:?}", data_message);
                     if data_message.message_type == MessageType::None {
                         debug!("message is None, continue");
                         continue;
                     }
+                    debug!("definition: {:?}", definition);
+                    debug!("massage: {:?}", data_message);
                     data.push(FitDataMessage {
                         header: message_header,
                         message: data_message,
@@ -128,10 +130,13 @@ impl Fit {
         let body = &buf[header.header_size as usize..end_byte as usize];
         let body_crc = calculate_fit_crc(&body);
         let mut writer = Cursor::new(buf);
-        if header_crc.is_some() {
-            writer.seek(SeekFrom::Start(header.header_size as u64 - 2))?;
-            debug!("header crc: 0x{:X}", header_crc.unwrap());
-            write_bin(&mut writer, header_crc.unwrap(), Endian::Little)?;
+        match header_crc {
+            None => {}
+            Some(crc) => {
+                writer.seek(SeekFrom::Start(header.header_size as u64 - 2))?;
+                debug!("header crc: 0x{:X}", crc);
+                write_bin(&mut writer, crc, Endian::Little)?;
+            }
         }
         debug!("body crc: 0x{:X}", body_crc);
         writer.seek(SeekFrom::End(0))?;
@@ -178,13 +183,14 @@ impl Fit {
             }
         }
         let mut header = self.header.clone();
-        header.data_size = writer.position() as u32 - header.header_size as u32 - 2;
+        header.data_size = writer.position() as u32 - header.header_size as u32;
         writer.seek(SeekFrom::Start(0))?;
         header.write(&mut writer)?;
         writer.flush()?;
         Ok(header)
     }
 
+    #[allow(unused)]
     pub fn merge<P: AsRef<Path>>(files: Vec<P>, path: P) -> BinResult<()> {
         if files.is_empty() || files.len() <= 1 {
             error!("Error files is empty: {:?}", files.len());
@@ -345,17 +351,21 @@ pub struct FitMessageHeader {
 
 impl FitMessageHeader {
     fn to_bytes(&self) -> u8 {
-        let mut x = self.local_num;
         if self.compressed_header {
+            let mut x = self.time_offset.unwrap_or_default();
+            x |= self.local_num << 5;
             x |= COMPRESSED_HEADER_MASK;
+            x
+        } else {
+            let mut x = self.local_num;
+            if self.definition {
+                x |= DEFINITION_HEADER_MASK;
+            }
+            if self.dev_fields {
+                x |= DEVELOPER_FIELDS_MASK;
+            }
+            x
         }
-        if self.definition {
-            x |= DEFINITION_HEADER_MASK;
-        }
-        if self.dev_fields {
-            x |= DEVELOPER_FIELDS_MASK;
-        }
-        x
     }
 
     fn from_bytes(x: u8) -> FitMessageHeader {

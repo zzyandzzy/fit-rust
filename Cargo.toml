@@ -17,3 +17,4 @@ tracing-subscriber = { version = "0.3", features = [
     "local-time",
 ] }
 time = { version = "0.3.28", features = ["macros"] }
+paste = "1.0"

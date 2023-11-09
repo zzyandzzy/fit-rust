@@ -1,4 +1,4 @@
-use crate::protocol::field_type_enum::FieldType;
+use crate::protocol::get_field_string_value::FieldType;
 use crate::protocol::message_type::MessageType;
 use crate::protocol::MatchFieldTypeFn;
 

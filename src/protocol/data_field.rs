@@ -1,8 +1,9 @@
 use crate::protocol::consts::{COORD_SEMICIRCLES_CALC, PSEUDO_EPOCH};
-use crate::protocol::field_type_enum::FieldType;
 use crate::protocol::get_field_offset::get_field_offset_fn;
 use crate::protocol::get_field_scale::get_field_scale_fn;
-use crate::protocol::get_field_string_value::get_field_string_value_fn;
+use crate::protocol::get_field_string_value::{
+    get_field_key_from_string, get_field_string_value, FieldType,
+};
 use crate::protocol::get_field_type::get_field_type_fn;
 use crate::protocol::io::{
     read_i16, read_i32, read_i64, read_i8, read_u16, read_u32, read_u64, read_u8, skip_bytes,
@@ -17,7 +18,7 @@ use binrw::{BinResult, Endian};
 use copyless::VecHelper;
 use std::fmt::{Debug, Formatter};
 use std::io::{Read, Seek, Write};
-use tracing::warn;
+use tracing::{debug, warn};
 
 #[derive(Clone, PartialEq)]
 pub struct DataField {
@@ -343,11 +344,11 @@ impl DataField {
             }
             f => {
                 if let Some(Value::U8(k)) = v.value {
-                    if let Some(t) = get_field_string_value_fn(f, usize::from(k)) {
+                    if let Some(t) = get_field_string_value(f, usize::from(k)) {
                         std::mem::replace(&mut v.value, Some(Value::Enum(t)));
                     }
                 } else if let Some(Value::U16(k)) = v.value {
-                    if let Some(t) = get_field_string_value_fn(f, usize::from(k)) {
+                    if let Some(t) = get_field_string_value(f, usize::from(k)) {
                         std::mem::replace(&mut v.value, Some(Value::Enum(t)));
                     }
                 }
@@ -360,6 +361,7 @@ impl DataField {
         fields: MatchFieldTypeFn,
         scales: MatchScaleFn,
         offsets: MatchOffsetFn,
+        def_field: Option<&FieldDefinition>,
     ) -> Option<Value> {
         match fields(v.field_num as usize) {
             FieldType::None => None,
@@ -411,17 +413,23 @@ impl DataField {
                 }
                 v.value
             }
-            _ => {
+            f => {
                 let v = v.clone();
-                // if let Some(Value::U8(k)) = v.value {
-                //     if let Some(t) = get_field_string_value_fn(f, usize::from(k)) {
-                //         std::mem::replace(&mut v.value, Some(Value::Enum(t)));
-                //     }
-                // } else if let Some(Value::U16(k)) = v.value {
-                //     if let Some(t) = get_field_string_value_fn(f, usize::from(k)) {
-                //         std::mem::replace(&mut v.value, Some(Value::Enum(t)));
-                //     }
-                // }
+                if let Some(Value::Enum(k)) = v.value {
+                    if let Some(t) = get_field_key_from_string(f, k) {
+                        debug!("Enum({:?}), code: 0x{:X}", k, t);
+                        match def_field {
+                            None => {}
+                            Some(def_field) => {
+                                if def_field.size == 1 {
+                                    return Some(Value::U8(t as u8));
+                                } else if def_field.size == 2 {
+                                    return Some(Value::U16(t as u16));
+                                }
+                            }
+                        }
+                    }
+                }
                 v.value
             }
         }
@@ -437,10 +445,10 @@ impl DataField {
         let offsets = get_field_offset_fn(message_type);
         let fields = get_field_type_fn(message_type);
         for (i, field) in values.iter().enumerate() {
-            let value = DataField::process_write_value(field, fields, scales, offsets);
+            let def_field = def_msg.fields.get(i);
+            let value = DataField::process_write_value(field, fields, scales, offsets, def_field);
             match value {
                 None => {
-                    let def_field = def_msg.fields.get(i);
                     DataField::write_none(writer, endian, def_field);
                 }
                 Some(v) => {
@@ -458,8 +466,11 @@ impl DataField {
                         Value::ArrU32(v) => write_bin(writer, v, endian),
                         Value::Time(v) => write_bin(writer, v, endian),
                         Value::String(v) => write_bin(writer, v.as_bytes(), endian),
-                        Value::Enum(_) => {
-                            let def_field = def_msg.fields.get(i);
+                        Value::Enum(e) => {
+                            warn!(
+                                "Write Enum({:?}) is unimplemented, def_field: {:?}",
+                                e, def_field
+                            );
                             Ok(DataField::write_none(writer, endian, def_field))
                         }
                         _ => Ok(()),
@@ -479,7 +490,7 @@ impl DataField {
                 warn!("Can not write from None!");
             }
             Some(def_field) => {
-                let vec: Vec<u8> = vec![0; def_field.size as usize];
+                let vec: Vec<u8> = vec![0x00; def_field.size as usize];
                 let _ = write_bin(writer, vec, endian);
             }
         }
