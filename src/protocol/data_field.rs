@@ -6,8 +6,8 @@ use crate::protocol::get_field_string_value::{
 };
 use crate::protocol::get_field_type::get_field_type_fn;
 use crate::protocol::io::{
-    read_i16, read_i32, read_i64, read_i8, read_u16, read_u32, read_u64, read_u8, skip_bytes,
-    write_bin,
+    read_i16, read_i32, read_i64, read_i8, read_u16, read_u16_arr, read_u32, read_u32_arr,
+    read_u64, read_u8, read_u8_arr, skip_bytes, write_bin,
 };
 use crate::protocol::message_type::MessageType;
 use crate::protocol::value::Value;
@@ -94,8 +94,12 @@ impl DataField {
             0 | 13 => {
                 // enum / byte
                 if size > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     match read_u8(reader) {
                         v => Some(Value::U8(v)),
@@ -105,8 +109,12 @@ impl DataField {
             1 => {
                 // sint8
                 if size > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     match read_i8(reader) {
                         v => Some(Value::I8(v)),
@@ -116,9 +124,12 @@ impl DataField {
             2 => {
                 // uint8
                 if size > 1 {
-                    let mut buf: Vec<_> = Vec::with_capacity(size.into());
-                    let _ = reader.take(size.into()).read_to_end(&mut buf);
-                    Some(Value::ArrU8(buf))
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     match read_u8(reader) {
                         v => Some(Value::U8(v)),
@@ -129,8 +140,12 @@ impl DataField {
                 // sint16
                 let number_of_values = size / 2;
                 if number_of_values > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     let val = read_i16(reader, endian);
                     Some(Value::I16(val))
@@ -140,12 +155,7 @@ impl DataField {
                 // uint16
                 let number_of_values = size / 2;
                 if number_of_values > 1 {
-                    let c: Vec<_> = (0..number_of_values)
-                        .filter_map(|_| match read_u16(reader, endian) {
-                            0xFFFF => None,
-                            v => Some(v),
-                        })
-                        .collect();
+                    let c = read_u16_arr(reader, endian, number_of_values);
                     if c.is_empty() {
                         None
                     } else {
@@ -160,8 +170,12 @@ impl DataField {
                 // sint32
                 let number_of_values = size / 4;
                 if number_of_values > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     let val = read_i32(reader, endian);
                     Some(Value::I32(val))
@@ -171,12 +185,7 @@ impl DataField {
                 // uint32
                 let number_of_values = size / 4;
                 if number_of_values > 1 {
-                    let c: Vec<_> = (0..number_of_values)
-                        .filter_map(|_| match read_u32(reader, endian) {
-                            0xFFFF_FFFF => None,
-                            v => Some(v),
-                        })
-                        .collect();
+                    let c = read_u32_arr(reader, endian, number_of_values);
                     if c.is_empty() {
                         None
                     } else {
@@ -201,8 +210,12 @@ impl DataField {
                 // float32
                 let number_of_values = size / 4;
                 if number_of_values > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     let uval = read_u32(reader, endian);
                     let val = f32::from_bits(uval);
@@ -213,8 +226,12 @@ impl DataField {
                 // float64
                 let number_of_values = size / 8;
                 if number_of_values > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     let uval = read_u64(reader, endian);
                     let val = f64::from_bits(uval);
@@ -224,8 +241,12 @@ impl DataField {
             10 => {
                 // uint8z
                 if size > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     let val = read_u8(reader);
                     Some(Value::U8(val))
@@ -235,8 +256,12 @@ impl DataField {
                 // uint16z
                 let number_of_values = size / 2;
                 if number_of_values > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     let val = read_u16(reader, endian);
                     Some(Value::U16(val))
@@ -246,8 +271,12 @@ impl DataField {
                 // uint32z
                 let number_of_values = size / 4;
                 if number_of_values > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     let val = read_u32(reader, endian);
                     Some(Value::U32(val))
@@ -257,8 +286,12 @@ impl DataField {
                 // sint64
                 let number_of_values = size / 8;
                 if number_of_values > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     let val = read_i64(reader, endian);
                     Some(Value::I64(val))
@@ -268,8 +301,12 @@ impl DataField {
                 // uint64
                 let number_of_values = size / 8;
                 if number_of_values > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     let val = read_u64(reader, endian);
                     Some(Value::U64(val))
@@ -279,8 +316,12 @@ impl DataField {
                 // uint64z
                 let number_of_values = size / 8;
                 if number_of_values > 1 {
-                    skip_bytes(reader, size);
-                    None
+                    let c = read_u8_arr(reader, size);
+                    if c.is_empty() {
+                        None
+                    } else {
+                        Some(Value::ArrU8(c))
+                    }
                 } else {
                     let val = read_u64(reader, endian);
                     Some(Value::U64(val))
@@ -425,6 +466,10 @@ impl DataField {
                                     return Some(Value::U8(t as u8));
                                 } else if def_field.size == 2 {
                                     return Some(Value::U16(t as u16));
+                                } else if def_field.size == 4 {
+                                    return Some(Value::U32(t as u32));
+                                } else if def_field.size == 8 {
+                                    return Some(Value::U64(t as u64));
                                 }
                             }
                         }
@@ -459,6 +504,8 @@ impl DataField {
                         Value::I16(v) => write_bin(writer, v, endian),
                         Value::U32(v) => write_bin(writer, v, endian),
                         Value::I32(v) => write_bin(writer, v, endian),
+                        Value::U64(v) => write_bin(writer, v, endian),
+                        Value::I64(v) => write_bin(writer, v, endian),
                         Value::F32(v) => write_bin(writer, v, endian),
                         Value::F64(v) => write_bin(writer, v, endian),
                         Value::ArrU8(v) => write_bin(writer, v, endian),
@@ -473,7 +520,6 @@ impl DataField {
                             );
                             Ok(DataField::write_none(writer, endian, def_field))
                         }
-                        _ => Ok(()),
                     };
                 }
             };

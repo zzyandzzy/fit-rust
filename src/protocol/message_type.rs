@@ -107,18 +107,32 @@ enum_from_primitive! {
     MagnetometerData = 208,
     BarometerData = 209,
     OneDSensorCalibration = 210,
+    MonitoringHrData = 211,
+    TimeInZone = 216,
     Set = 225,
     StressLevel = 227,
+    MaxMetData = 229,
     DiveSettings = 258,
     DiveGas = 259,
     DiveAlarm = 262,
     ExerciseTitle = 264,
     DiveSummary = 268,
+    Spo2Data = 269,
+    SleepLevel = 275,
     Jump = 285,
+    BeatIntervals = 290,
+    RespirationRate = 297,
+    Split = 312,
     ClimbPro = 317,
+    TankUpdate = 319,
+    TankSummary = 323,
+    SleepAssessment = 346,
+    HrvStatusSummary = 370,
+    HrvValue = 371,
     DeviceAuxBatteryInfo = 375,
     DiveApneaAlarm = 393,
-    MfgRange = 0xFF00,
+    MfgRangeMin = 0xFF00,
+    MfgRangeMax = 0xFFFE,
     None = 0xFFFF,
 }
 
@@ -135,7 +149,7 @@ pub fn parse_message_type(value: u16) -> BinResult<MessageType> {
         return Ok(message_type);
     } else {
         match value {
-            0xFF00..=0xFFFE => Ok(MessageType::MfgRange),
+            0xFF00..=0xFFFE => Ok(MessageType::MfgRangeMin),
             v => {
                 warn!("v: {}, MessageType::None!", v);
                 Ok(MessageType::None)

@@ -18,12 +18,22 @@ where
     buf[0]
 }
 
+pub fn read_u8_arr<R>(map: &mut R, size: u8) -> Vec<u8>
+where
+    R: Read,
+{
+    let mut buf: Vec<_> = Vec::with_capacity(size.into());
+    let _ = map.take(size.into()).read_to_end(&mut buf);
+    buf
+}
+
 pub fn read_i8<R>(map: &mut R) -> i8
 where
     R: Read,
 {
     read_u8(map) as i8
 }
+
 pub fn read_u16<R>(map: &mut R, endian: Endian) -> u16
 where
     R: Read,
@@ -34,6 +44,17 @@ where
     } else {
         u16::from_be_bytes(arr)
     }
+}
+
+pub fn read_u16_arr<R>(map: &mut R, endian: Endian, size: u8) -> Vec<u16>
+where
+    R: Read,
+{
+    (0..size)
+        .filter_map(|_| match read_u16(map, endian) {
+            v => Some(v),
+        })
+        .collect()
 }
 
 pub fn read_i16<R>(map: &mut R, endian: Endian) -> i16
@@ -84,6 +105,18 @@ where
         u32::from_be_bytes(arr)
     }
 }
+
+pub fn read_u32_arr<R>(map: &mut R, endian: Endian, size: u8) -> Vec<u32>
+where
+    R: Read,
+{
+    (0..size)
+        .filter_map(|_| match read_u32(map, endian) {
+            v => Some(v),
+        })
+        .collect()
+}
+
 pub fn read_u64<R>(map: &mut R, endian: Endian) -> u64
 where
     R: Read,

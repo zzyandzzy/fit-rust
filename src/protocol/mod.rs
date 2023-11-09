@@ -1,12 +1,12 @@
 mod consts;
-mod data_field;
+pub mod data_field;
 mod get_field_offset;
 mod get_field_scale;
 mod get_field_string_value;
 mod get_field_type;
 mod io;
 pub mod message_type;
-mod value;
+pub mod value;
 
 use crate::protocol::consts::{
     COMPRESSED_HEADER_LOCAL_MESSAGE_NUMBER_MASK, COMPRESSED_HEADER_MASK,
@@ -85,8 +85,10 @@ impl Fit {
                         debug!("message is None, continue");
                         continue;
                     }
-                    debug!("definition: {:?}", definition);
-                    debug!("massage: {:?}", data_message);
+                    if data_message.message_type != MessageType::Record {
+                        debug!("definition: {:?}", definition);
+                        debug!("massage: {:?}", data_message);
+                    }
                     data.push(FitDataMessage {
                         header: message_header,
                         message: data_message,
