@@ -99,3 +99,4 @@ SOFTWARE.
 ## 致谢
 
 - [fit-rs](https://github.com/richardbrodie/fit-rs)
+- [bin-rw](https://github.com/jam1garner/binrw)
