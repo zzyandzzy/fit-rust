@@ -2,3 +2,4 @@
 /.idea
 /tests
 .env
+.DS_Store
