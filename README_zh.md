@@ -1,0 +1,101 @@
+# fit-rust
+
+[English](./README_zh.md)
+
+`fit-rust` 是一个用 Rust 语言编写的库，用于读取、写入和合并 Garmin 的 Flexible and Interoperable Data Transfer (FIT) 文件。该库提供了一种高效且类型安全的方式来处理 FIT 文件，适用于运动和健康数据的分析和处理。
+
+## 功能
+
+- 读取 FIT 文件，解析为 Rust 可操作的结构。
+- 写入数据到 FIT 文件。
+- 合并多个 FIT 文件中的数据。
+
+## 安装
+
+将 `fit-rust` 添加到你的 Cargo 项目中：
+
+```toml
+[dependencies]
+fit-rust = "0.1.0"
+```
+
+## 使用
+以下是使用 fit-rust 库进行基本操作的示例。
+
+**读取 FIT 文件**
+
+```rust
+fn main() -> BinResult<()> {
+    let file = read("test.fit").unwrap();
+    let fit: Fit = Fit::read(file)?;
+    for data in &fit.data {
+        match data.message.message_type {
+            MessageType::Record => {
+                println!("Record: {:?}", data);
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+```
+
+**写入 FIT 文件**
+```rust
+fn main() -> BinResult<()> {
+    let file = read("test.fit").unwrap();
+    let fit: Fit = Fit::read(file)?;
+    fit.write("test1.fit")?;
+    Ok(())
+}
+```
+
+**合并 FIT 文件**
+```rust
+fn main() -> BinResult<()> {
+    Fit::merge(
+        vec![
+            "test1.fit",
+            "test2.fit",
+            "test3.fit",
+        ],
+        "test.fit",
+    )?;
+    Ok(())
+}
+```
+
+## 贡献
+
+如果你想为 fit-rust 贡献代码，欢迎提交 Pull Request 或创建 Issue 讨论新功能或发现的问题。
+
+## 许可证
+
+fit-rust 采用 MIT 许可证
+
+```text
+MIT License
+
+Copyright (c) 2020 intent
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+## 致谢
+
+- [fit-rs](https://github.com/richardbrodie/fit-rs)
