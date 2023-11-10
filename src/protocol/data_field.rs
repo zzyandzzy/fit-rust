@@ -18,7 +18,6 @@ use binrw::{BinResult, Endian};
 use copyless::VecHelper;
 use std::fmt::{Debug, Formatter};
 use std::io::{Read, Seek, Write};
-use tracing::{debug, warn};
 
 #[derive(Clone, PartialEq)]
 pub struct DataField {
@@ -56,7 +55,7 @@ impl DataField {
         let mut values = Vec::with_capacity(fields.len());
         if message_type == MessageType::None {
             let size_sum: u8 = fields.iter().map(|field| field.size).sum();
-            warn!(
+            println!(
                 "message_type == MessageType::None, skip_bytes: {}",
                 size_sum
             );
@@ -458,7 +457,6 @@ impl DataField {
                 let v = v.clone();
                 if let Some(Value::Enum(k)) = v.value {
                     if let Some(t) = get_field_key_from_string(f, k) {
-                        debug!("Enum({:?}), code: 0x{:X}", k, t);
                         match def_field {
                             None => {}
                             Some(def_field) => {
@@ -514,7 +512,7 @@ impl DataField {
                         Value::Time(v) => write_bin(writer, v, endian),
                         Value::String(v) => write_bin(writer, v.as_bytes(), endian),
                         Value::Enum(e) => {
-                            warn!(
+                            println!(
                                 "Write Enum({:?}) is unimplemented, def_field: {:?}",
                                 e, def_field
                             );
@@ -533,7 +531,7 @@ impl DataField {
     {
         match def_field {
             None => {
-                warn!("Can not write from None!");
+                println!("Can not write from None!");
             }
             Some(def_field) => {
                 let vec: Vec<u8> = vec![0x00; def_field.size as usize];

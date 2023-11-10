@@ -8,13 +8,4 @@ edition = "2021"
 [dependencies]
 copyless = "0.1.5"
 binrw = { version = "0.13.0" }
-dotenv = "0.15.0"
-dotenv_codegen = "0.15.0"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = [
-    "env-filter",
-    "time",
-    "local-time",
-] }
-time = { version = "0.3.28", features = ["macros"] }
 paste = "1.0"

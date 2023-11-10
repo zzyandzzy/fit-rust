@@ -29,7 +29,6 @@ use std::fs::{read, write};
 use std::io::{Cursor, Seek, SeekFrom, Write};
 use std::ops::Div;
 use std::path::Path;
-use tracing::{debug, error};
 
 pub type MatchScaleFn = fn(usize) -> Option<f32>;
 pub type MatchOffsetFn = fn(usize) -> Option<i16>;
@@ -55,7 +54,6 @@ impl Fit {
     pub fn read(buf: Vec<u8>) -> BinResult<Self> {
         let mut cursor = Cursor::new(buf);
         let header: FitHeader = cursor.read_ne()?;
-        debug!("header: {:?}", header);
         let mut map: HashMap<u8, VecDeque<FitDefinitionMessage>> = HashMap::new();
         let mut global_def_map: HashMap<u16, DefinitionMessage> = HashMap::new();
 
@@ -87,23 +85,13 @@ impl Fit {
                     };
                     let data_message: DataMessage = cursor.read_ne_args((definition,))?;
                     if data_message.message_type == MessageType::None {
-                        debug!("message is None, continue");
                         continue;
-                    }
-                    if data_message.message_type != MessageType::Record {
-                        debug!("definition: {:?}", definition);
-                        debug!("massage: {:?}", data_message);
                     }
                     data.push(FitDataMessage {
                         header: message_header,
                         message: data_message,
                     });
                     if cursor.position() >= (header.data_size + header.header_size as u32) as u64 {
-                        debug!(
-                            "decode finish! pos: {}, size: {:?}KB",
-                            cursor.position(),
-                            (header.data_size + header.header_size as u32 + 2) / 1024
-                        );
                         break;
                     }
                 }
@@ -141,11 +129,9 @@ impl Fit {
             None => {}
             Some(crc) => {
                 writer.seek(SeekFrom::Start(header.header_size as u64 - 2))?;
-                debug!("header crc: 0x{:X}", crc);
                 write_bin(&mut writer, crc, Endian::Little)?;
             }
         }
-        debug!("body crc: 0x{:X}", body_crc);
         writer.seek(SeekFrom::End(0))?;
         write_bin(&mut writer, body_crc, Endian::Little)?;
         writer.flush()?;
@@ -174,7 +160,7 @@ impl Fit {
             let def_msg = global_def_map.get(&item.message.message_type.to_primitive());
             match def_msg {
                 None => {
-                    error!(
+                    eprintln!(
                         "Error definition message is not define! message type: {:?}",
                         item.message.message_type
                     );
@@ -202,7 +188,7 @@ impl Fit {
     #[allow(unused)]
     pub fn merge<P: AsRef<Path>>(files: Vec<P>, path: P) -> BinResult<()> {
         if files.is_empty() || files.len() <= 1 {
-            error!("Error files is empty: {:?}", files.len());
+            eprintln!("Error files is empty: {:?}", files.len());
             return Err(Error::Io(binrw::io::Error::new(
                 binrw::io::ErrorKind::UnexpectedEof,
                 "Error files is empty!",

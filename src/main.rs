@@ -1,16 +1,11 @@
-use crate::log::init_logger;
 use crate::protocol::message_type::MessageType;
 use crate::protocol::value::Value;
 use crate::protocol::{Fit, FitDataMessage};
 use binrw::BinResult;
 use std::fs::read;
-use tracing::info;
-
-mod log;
 mod protocol;
 
 fn main() -> BinResult<()> {
-    init_logger();
     // let file = read("./tests/ride-1-2023-11-07-21-20-25.fit").unwrap();
     // let fit: Fit = Fit::read(file)?;
     // for data in &fit.data {
@@ -69,7 +64,7 @@ fn print_record(data: &FitDataMessage) {
     let alt = alt as f32 / 5.0 - 500.0;
     let speed = speed as f32 / 1000.0 * 3.6;
 
-    info!("{{timestamp: {}, lat: {:0<10}, long: {:0<10}, alt: {:.2}m, heart: {:>3}bpm, cadence: {:>3}rpm, distance: {:.4}km, speed: {:.2}km/h, power: {:>4}w, temp: {:>2}C}},",
+    println!("{{timestamp: {}, lat: {:0<10}, long: {:0<10}, alt: {:.2}m, heart: {:>3}bpm, cadence: {:>3}rpm, distance: {:.4}km, speed: {:.2}km/h, power: {:>4}w, temp: {:>2}C}},",
                      timestamp,
                      lat, long,
                      alt, heart,
