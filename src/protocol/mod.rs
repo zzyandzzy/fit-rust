@@ -39,9 +39,7 @@ pub struct Fit {
 
     pub data: Vec<FitDataMessage>,
 
-    map: HashMap<u8, VecDeque<FitDefinitionMessage>>,
-
-    global_def_map: HashMap<u16, DefinitionMessage>,
+    pub map: HashMap<u8, VecDeque<FitDefinitionMessage>>,
 }
 
 impl Debug for Fit {
@@ -55,7 +53,6 @@ impl Fit {
         let mut cursor = Cursor::new(buf);
         let header: FitHeader = cursor.read_ne()?;
         let mut map: HashMap<u8, VecDeque<FitDefinitionMessage>> = HashMap::new();
-        let mut global_def_map: HashMap<u16, DefinitionMessage> = HashMap::new();
 
         let mut data: Vec<FitDataMessage> = Vec::new();
         loop {
@@ -67,10 +64,6 @@ impl Fit {
                     }
                     let definition_message: DefinitionMessage =
                         cursor.read_ne_args((message_header.dev_fields,))?;
-                    global_def_map.insert(
-                        definition_message.global_message_number,
-                        definition_message.clone(),
-                    );
                     map.entry(message_header.local_num)
                         .or_insert_with(VecDeque::new)
                         .push_front(FitDefinitionMessage {
@@ -97,12 +90,7 @@ impl Fit {
                 }
             }
         }
-        Ok(Fit {
-            header,
-            data,
-            map,
-            global_def_map,
-        })
+        Ok(Fit { header, data, map })
     }
 
     pub fn write<P: AsRef<Path>>(&self, file: P) -> BinResult<()> {
@@ -140,7 +128,13 @@ impl Fit {
 
     pub(crate) fn write_buf(&self, buf: &mut Vec<u8>) -> BinResult<FitHeader> {
         let mut map = self.map.clone();
-        let global_def_map: HashMap<u16, DefinitionMessage> = self.global_def_map.clone();
+        let mut global_def_map: HashMap<u16, DefinitionMessage> = HashMap::new();
+        for (_, queue) in &map {
+            for value in queue {
+                global_def_map.insert(value.message.global_message_number, value.message.clone());
+            }
+        }
+
         let mut writer = Cursor::new(buf);
         skip_bytes(&mut writer, self.header.header_size);
         for item in &self.data {
