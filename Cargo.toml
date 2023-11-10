@@ -2,6 +2,12 @@
 name = "fit-rust"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+authors = ["zzyandzzy <zzy.main@gmail.com>"]
+description = "fit-rust is a Rust library designed for reading, writing, and merging FIT protocol files."
+documentation = "https://docs.rs/fit-rust"
+repository = "https://github.com/zzyandzzy/fit-rust"
+exclude = ["tests/*"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -9,3 +15,7 @@ edition = "2021"
 copyless = "0.1.5"
 binrw = { version = "0.13.0" }
 paste = "1.0"
+
+[[bin]]
+name = "test_std"
+path = "bin/test_std.rs"
