@@ -5,6 +5,7 @@ mod get_field_scale;
 mod get_field_string_value;
 mod get_field_type;
 mod io;
+mod macros;
 pub mod message_type;
 pub mod value;
 
@@ -16,13 +17,17 @@ use crate::protocol::consts::{
 use crate::protocol::data_field::DataField;
 use crate::protocol::get_field_string_value::FieldType;
 use crate::protocol::io::{skip_bytes, write_bin};
+use crate::protocol::macros::get_field_value;
 use crate::protocol::message_type::MessageType;
+use crate::protocol::value::Value;
+use crate::{merge_stats, update_field};
 use binrw::{binrw, BinRead, BinReaderExt, BinResult, BinWrite, Endian, Error};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::fs::{read, write};
 use std::io::{Cursor, Seek, SeekFrom, Write};
+use std::ops::Div;
 use std::path::Path;
 use tracing::{debug, error};
 
@@ -191,7 +196,9 @@ impl Fit {
         writer.flush()?;
         Ok(header)
     }
+}
 
+impl Fit {
     #[allow(unused)]
     pub fn merge<P: AsRef<Path>>(files: Vec<P>, path: P) -> BinResult<()> {
         if files.is_empty() || files.len() <= 1 {
@@ -203,14 +210,238 @@ impl Fit {
         }
         let file = read(files.get(0).unwrap()).unwrap();
         let mut fit: Fit = Fit::read(file)?;
+        // find session
+        let session: Option<(usize, FitDataMessage)> = fit.get_session();
+        let mut sessions: Vec<Option<(usize, FitDataMessage)>> = vec![session];
         for i in 1..=files.len() - 1 {
             let f = files.get(i).unwrap();
             let f = read(f).unwrap();
             let mut tmp = Fit::read(f)?;
-            fit.data.append(&mut tmp.data);
+            sessions.push(tmp.get_session());
+
+            let to_move: Vec<_> = tmp
+                .data
+                .iter()
+                .enumerate()
+                .filter(|(_, message)| matches!(message.message.message_type, MessageType::Record))
+                .map(|(i, _)| i)
+                .collect();
+
+            for i in to_move.into_iter().rev() {
+                // Here, we directly take the message without wrapping it in an Option.
+                let message = tmp.data.swap_remove(i);
+                fit.data.push(message);
+            }
         }
 
+        fit.replace_session(sessions);
         fit.write(path)
+    }
+
+    fn replace_session(&mut self, sessions: Vec<Option<(usize, FitDataMessage)>>) {
+        let mut index = 0;
+        let mut session_vec = vec![];
+        for session in sessions {
+            match session {
+                None => {}
+                Some((i, s)) => {
+                    if index == 0 {
+                        index = i;
+                    }
+                    session_vec.push(s);
+                }
+            }
+        }
+
+        let session = Fit::merge_sessions(session_vec);
+        match session {
+            None => {}
+            Some(session) => {
+                self.data[index] = session;
+            }
+        }
+    }
+
+    fn merge_sessions(sessions: Vec<FitDataMessage>) -> Option<FitDataMessage> {
+        if sessions.is_empty() {
+            return None;
+        }
+        let mut merged_session = sessions[0].clone();
+        // max
+        let mut max_stop_timestamp = Value::Time(u32::MIN);
+        let mut max_speed = Value::U16(u16::MIN);
+        let mut max_power = Value::U16(u16::MIN);
+        let mut max_altitude = Value::U16(u16::MIN);
+        let mut max_pos_grade = Value::I16(i16::MIN);
+        let mut max_neg_grade = Value::I16(i16::MIN);
+        let mut max_heart_rate = Value::U8(u8::MIN);
+        let mut max_cadence = Value::U8(u8::MIN);
+        let mut max_temperature = Value::U8(u8::MIN);
+        // min
+        let mut min_start_timestamp = Value::Time(u32::MAX);
+        let mut min_altitude = Value::U16(u16::MAX);
+        let mut min_heart_rate = Value::U8(u8::MAX);
+        // sum
+        let mut total_elapsed_time = Value::U32(0_u32);
+        let mut total_timer_time = Value::U32(0_u32);
+        let mut total_distance = Value::U32(0_u32);
+        let mut total_moving_time = Value::U32(0_u32);
+        let mut total_calories = Value::U16(0_u16);
+        let mut total_ascent = Value::U16(0_u16);
+        let mut total_descent = Value::U16(0_u16);
+        // avg
+        let mut avg_altitude = Value::I32(0_i32);
+        let mut avg_altitude_count = 0_i32;
+        let mut avg_grade = Value::I32(0_i32);
+        let mut avg_grade_count = 0_i32;
+        let mut avg_pos_grade = Value::I32(0_i32);
+        let mut avg_pos_grade_count = 0_i32;
+        let mut avg_neg_grade = Value::I32(0_i32);
+        let mut avg_neg_grade_count = 0_i32;
+        let mut avg_pos_vertical_speed = Value::I32(0_i32);
+        let mut avg_pos_vertical_speed_count = 0_i32;
+        let mut avg_neg_vertical_speed = Value::I32(0_i32);
+        let mut avg_neg_vertical_speed_count = 0_i32;
+        let mut avg_heart_rate = Value::I32(0_i32);
+        let mut avg_heart_rate_count = 0_i32;
+        let mut avg_cadence = Value::I32(0_i32);
+        let mut avg_cadence_count = 0_i32;
+        let mut avg_temperature = Value::I32(0_i32);
+        let mut avg_temperature_count = 0_i32;
+
+        for session in sessions {
+            merge_stats!(
+                // max
+                max 253, max_stop_timestamp, session,
+                max 15, max_speed, session,
+                max 21, max_power, session,
+                max 50, max_altitude, session,
+                max 55, max_pos_grade, session,
+                max 56, max_neg_grade, session,
+                max 17, max_heart_rate, session,
+                max 19, max_cadence, session,
+                max 58, max_temperature, session,
+                // min
+                min 2, min_start_timestamp, session,
+                min 71, min_altitude, session,
+                min 64, min_heart_rate, session,
+                // sum
+                sum 7, total_elapsed_time, session,
+                sum 8, total_timer_time, session,
+                sum 9, total_distance, session,
+                sum 59, total_moving_time, session,
+                sum 11, total_calories, session,
+                sum 22, total_ascent, session,
+                sum 23, total_descent, session,
+                sum 23, total_descent, session,
+                // avg
+                avg 49, avg_altitude, avg_altitude_count, session,
+                avg 52, avg_grade, avg_grade_count, session,
+                avg 53, avg_pos_grade, avg_pos_grade_count, session,
+                avg 54, avg_neg_grade, avg_neg_grade_count, session,
+                avg 60, avg_pos_vertical_speed, avg_pos_vertical_speed_count, session,
+                avg 61, avg_neg_vertical_speed, avg_neg_vertical_speed_count, session,
+                avg 16, avg_heart_rate, avg_heart_rate_count, session,
+                avg 18, avg_cadence, avg_cadence_count, session,
+                avg 57, avg_temperature, avg_temperature_count, session,
+            );
+        }
+
+        // Update merged session fields
+        // max
+        update_field!(merged_session.message.values, 253, max_stop_timestamp);
+        update_field!(merged_session.message.values, 15, max_speed);
+        update_field!(merged_session.message.values, 21, max_power);
+        update_field!(merged_session.message.values, 50, max_altitude);
+        update_field!(merged_session.message.values, 55, max_pos_grade);
+        update_field!(merged_session.message.values, 56, max_neg_grade);
+        update_field!(merged_session.message.values, 17, max_heart_rate);
+        update_field!(merged_session.message.values, 19, max_cadence);
+        update_field!(merged_session.message.values, 58, max_temperature);
+        // min
+        update_field!(merged_session.message.values, 2, min_start_timestamp);
+        update_field!(merged_session.message.values, 71, min_altitude);
+        update_field!(merged_session.message.values, 64, min_heart_rate);
+        // sum
+        update_field!(merged_session.message.values, 7, total_elapsed_time);
+        update_field!(merged_session.message.values, 8, total_timer_time);
+        update_field!(merged_session.message.values, 9, total_distance);
+        update_field!(merged_session.message.values, 59, total_moving_time);
+        update_field!(merged_session.message.values, 11, total_calories);
+        update_field!(merged_session.message.values, 22, total_ascent);
+        update_field!(merged_session.message.values, 23, total_descent);
+        // avg
+        let avg_altitude = <Value as Into<i32>>::into(avg_altitude).div(avg_altitude_count);
+        update_field!(
+            merged_session.message.values,
+            49,
+            Value::U16(avg_altitude as u16)
+        );
+        let avg_grade = <Value as Into<i32>>::into(avg_grade).div(avg_grade_count);
+        update_field!(
+            merged_session.message.values,
+            52,
+            Value::I16(avg_grade as i16)
+        );
+        let avg_pos_grade = <Value as Into<i32>>::into(avg_pos_grade).div(avg_pos_grade_count);
+        update_field!(
+            merged_session.message.values,
+            53,
+            Value::I16(avg_pos_grade as i16)
+        );
+        let avg_neg_grade = <Value as Into<i32>>::into(avg_neg_grade).div(avg_neg_grade_count);
+        update_field!(
+            merged_session.message.values,
+            54,
+            Value::I16(avg_neg_grade as i16)
+        );
+        let avg_pos_vertical_speed =
+            <Value as Into<i32>>::into(avg_pos_vertical_speed).div(avg_pos_vertical_speed_count);
+        update_field!(
+            merged_session.message.values,
+            60,
+            Value::I16(avg_pos_vertical_speed as i16)
+        );
+        let avg_neg_vertical_speed =
+            <Value as Into<i32>>::into(avg_neg_vertical_speed).div(avg_neg_vertical_speed_count);
+        update_field!(
+            merged_session.message.values,
+            61,
+            Value::I16(avg_neg_vertical_speed as i16)
+        );
+        let avg_heart_rate = <Value as Into<i32>>::into(avg_heart_rate).div(avg_heart_rate_count);
+        update_field!(
+            merged_session.message.values,
+            16,
+            Value::U8(avg_heart_rate as u8)
+        );
+        let avg_cadence = <Value as Into<i32>>::into(avg_cadence).div(avg_cadence_count);
+        update_field!(
+            merged_session.message.values,
+            18,
+            Value::U8(avg_cadence as u8)
+        );
+        let avg_temperature =
+            <Value as Into<i32>>::into(avg_temperature).div(avg_temperature_count);
+        update_field!(
+            merged_session.message.values,
+            57,
+            Value::I8(avg_temperature as i8)
+        );
+
+        Some(merged_session)
+    }
+
+    pub fn get_session(&self) -> Option<(usize, FitDataMessage)> {
+        for (index, message) in self.data.iter().enumerate() {
+            match message.message.message_type {
+                MessageType::Session => {
+                    return Some((index, message.clone()));
+                }
+                _ => {}
+            }
+        }
+        None
     }
 }
 

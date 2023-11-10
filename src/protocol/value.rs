@@ -162,11 +162,29 @@ impl From<Value> for u8 {
     }
 }
 
+impl From<Value> for i16 {
+    fn from(item: Value) -> Self {
+        match item {
+            Value::I16(v) => v,
+            _ => panic!("can't call this on a non-u16 variant"),
+        }
+    }
+}
+
 impl From<Value> for u16 {
     fn from(item: Value) -> Self {
         match item {
             Value::U16(v) => v,
             _ => panic!("can't call this on a non-u16 variant"),
+        }
+    }
+}
+
+impl From<Value> for i32 {
+    fn from(item: Value) -> Self {
+        match item {
+            Value::I32(v) => v,
+            _ => panic!("can't call this on a non-u32 variant"),
         }
     }
 }
