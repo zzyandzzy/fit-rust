@@ -225,11 +225,11 @@ impl Fit {
         }
     }
 
-    fn merge_sessions(sessions: Vec<FitDataMessage>) -> Option<FitDataMessage> {
+    fn merge_sessions(mut sessions: Vec<FitDataMessage>) -> Option<FitDataMessage> {
         if sessions.is_empty() {
             return None;
         }
-        let mut merged_session = sessions[0].clone();
+        let mut merged_session = sessions.remove(0);
         // max
         let mut max_stop_timestamp = Value::Time(u32::MIN);
         let mut max_speed = Value::U16(u16::MIN);
@@ -334,63 +334,82 @@ impl Fit {
         update_field!(merged_session.message.values, 22, total_ascent);
         update_field!(merged_session.message.values, 23, total_descent);
         // avg
-        let avg_altitude = <Value as Into<i32>>::into(avg_altitude).div(avg_altitude_count);
-        update_field!(
-            merged_session.message.values,
-            49,
-            Value::U16(avg_altitude as u16)
-        );
-        let avg_grade = <Value as Into<i32>>::into(avg_grade).div(avg_grade_count);
-        update_field!(
-            merged_session.message.values,
-            52,
-            Value::I16(avg_grade as i16)
-        );
-        let avg_pos_grade = <Value as Into<i32>>::into(avg_pos_grade).div(avg_pos_grade_count);
-        update_field!(
-            merged_session.message.values,
-            53,
-            Value::I16(avg_pos_grade as i16)
-        );
-        let avg_neg_grade = <Value as Into<i32>>::into(avg_neg_grade).div(avg_neg_grade_count);
-        update_field!(
-            merged_session.message.values,
-            54,
-            Value::I16(avg_neg_grade as i16)
-        );
-        let avg_pos_vertical_speed =
-            <Value as Into<i32>>::into(avg_pos_vertical_speed).div(avg_pos_vertical_speed_count);
-        update_field!(
-            merged_session.message.values,
-            60,
-            Value::I16(avg_pos_vertical_speed as i16)
-        );
-        let avg_neg_vertical_speed =
-            <Value as Into<i32>>::into(avg_neg_vertical_speed).div(avg_neg_vertical_speed_count);
-        update_field!(
-            merged_session.message.values,
-            61,
-            Value::I16(avg_neg_vertical_speed as i16)
-        );
-        let avg_heart_rate = <Value as Into<i32>>::into(avg_heart_rate).div(avg_heart_rate_count);
-        update_field!(
-            merged_session.message.values,
-            16,
-            Value::U8(avg_heart_rate as u8)
-        );
-        let avg_cadence = <Value as Into<i32>>::into(avg_cadence).div(avg_cadence_count);
-        update_field!(
-            merged_session.message.values,
-            18,
-            Value::U8(avg_cadence as u8)
-        );
-        let avg_temperature =
-            <Value as Into<i32>>::into(avg_temperature).div(avg_temperature_count);
-        update_field!(
-            merged_session.message.values,
-            57,
-            Value::I8(avg_temperature as i8)
-        );
+        if avg_altitude_count > 0 {
+            let avg_altitude = <Value as Into<i32>>::into(avg_altitude).div(avg_altitude_count);
+            update_field!(
+                merged_session.message.values,
+                49,
+                Value::U16(avg_altitude as u16)
+            );
+        }
+        if avg_grade_count > 0 {
+            let avg_grade = <Value as Into<i32>>::into(avg_grade).div(avg_grade_count);
+            update_field!(
+                merged_session.message.values,
+                52,
+                Value::I16(avg_grade as i16)
+            );
+        }
+        if avg_pos_grade_count > 0 {
+            let avg_pos_grade = <Value as Into<i32>>::into(avg_pos_grade).div(avg_pos_grade_count);
+            update_field!(
+                merged_session.message.values,
+                53,
+                Value::I16(avg_pos_grade as i16)
+            );
+        }
+        if avg_neg_grade_count > 0 {
+            let avg_neg_grade = <Value as Into<i32>>::into(avg_neg_grade).div(avg_neg_grade_count);
+            update_field!(
+                merged_session.message.values,
+                54,
+                Value::I16(avg_neg_grade as i16)
+            );
+        }
+        if avg_pos_vertical_speed_count > 0 {
+            let avg_pos_vertical_speed = <Value as Into<i32>>::into(avg_pos_vertical_speed)
+                .div(avg_pos_vertical_speed_count);
+            update_field!(
+                merged_session.message.values,
+                60,
+                Value::I16(avg_pos_vertical_speed as i16)
+            );
+        }
+        if avg_neg_vertical_speed_count > 0 {
+            let avg_neg_vertical_speed = <Value as Into<i32>>::into(avg_neg_vertical_speed)
+                .div(avg_neg_vertical_speed_count);
+            update_field!(
+                merged_session.message.values,
+                61,
+                Value::I16(avg_neg_vertical_speed as i16)
+            );
+        }
+        if avg_heart_rate_count > 0 {
+            let avg_heart_rate =
+                <Value as Into<i32>>::into(avg_heart_rate).div(avg_heart_rate_count);
+            update_field!(
+                merged_session.message.values,
+                16,
+                Value::U8(avg_heart_rate as u8)
+            );
+        }
+        if avg_cadence_count > 0 {
+            let avg_cadence = <Value as Into<i32>>::into(avg_cadence).div(avg_cadence_count);
+            update_field!(
+                merged_session.message.values,
+                18,
+                Value::U8(avg_cadence as u8)
+            );
+        }
+        if avg_temperature_count > 0 {
+            let avg_temperature =
+                <Value as Into<i32>>::into(avg_temperature).div(avg_temperature_count);
+            update_field!(
+                merged_session.message.values,
+                57,
+                Value::I8(avg_temperature as i8)
+            );
+        }
 
         Some(merged_session)
     }
