@@ -16,7 +16,7 @@
 
 ```toml
 [dependencies]
-fit-rust = "0.1.0"
+fit-rust = "0.1"
 ```
 
 ## 使用

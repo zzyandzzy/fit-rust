@@ -16,7 +16,7 @@ Add `fit-rust` to your Cargo project by including it in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-fit-rust = "0.1.0"
+fit-rust = "0.1"
 ```
 
 ## Usage

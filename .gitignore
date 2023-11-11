@@ -3,3 +3,4 @@
 /tests
 .env
 .DS_Store
+Cargo.lock
