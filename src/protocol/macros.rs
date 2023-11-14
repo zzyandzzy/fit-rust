@@ -6,7 +6,7 @@ use crate::protocol::value::Value;
 macro_rules! update_field {
     ($fields:expr, $field_num:expr, $value:expr) => {
         if let Some(field) = $fields.iter_mut().find(|f| f.field_num == $field_num) {
-            field.value = Some($value);
+            field.value = $value;
         }
     };
 }
@@ -15,7 +15,7 @@ pub fn get_field_value(field_num: u8, values: &[DataField]) -> Option<Value> {
     values
         .iter()
         .find(|field| field.field_num == field_num)
-        .and_then(|field| field.value.clone())
+        .and_then(|field| Some(field.value.clone()))
 }
 
 #[macro_export]

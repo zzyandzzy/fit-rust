@@ -20,6 +20,7 @@ pub enum Value {
     ArrU8(Vec<u8>),
     ArrU16(Vec<u16>),
     ArrU32(Vec<u32>),
+    None,
 }
 
 #[allow(unused_must_use)]
