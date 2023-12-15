@@ -25,43 +25,40 @@ fit-rust = "0.1"
 **读取 FIT 文件**
 
 ```rust
-fn main() -> BinResult<()> {
-    let file = read("test.fit").unwrap();
-    let fit: Fit = Fit::read(file)?;
+use fit_rust::Fit;
+use std::fs;
+
+fn main() {
+    let file = fs::read("test.fit").unwrap();
+    let fit: Fit = Fit::read(file).unwrap();
     for data in &fit.data {
         match data.message.message_type {
-            MessageType::Record => {
-                println!("Record: {:?}", data);
+            _ => {
+                println!("Record: {:?}", data.message);
             }
-            _ => {}
         }
     }
-    Ok(())
 }
 ```
 
 **写入 FIT 文件**
 ```rust
-fn main() -> BinResult<()> {
-    let file = read("test.fit").unwrap();
-    let fit: Fit = Fit::read(file)?;
-    fit.write("test1.fit")?;
-    Ok(())
+use fit_rust::Fit;
+use std::fs;
+
+fn main() {
+    let file = fs::read("test.fit").unwrap();
+    let fit: Fit = Fit::read(file).unwrap();
+    fit.write("test1.fit").unwrap();
 }
 ```
 
 **合并 FIT 文件**
 ```rust
-fn main() -> BinResult<()> {
-    Fit::merge(
-        vec![
-            "test1.fit",
-            "test2.fit",
-            "test3.fit",
-        ],
-        "test.fit",
-    )?;
-    Ok(())
+use fit_rust::Fit;
+
+fn main() {
+    Fit::merge(vec!["test1.fit", "test2.fit", "test3.fit"], "test.fit").unwrap();
 }
 ```
 
