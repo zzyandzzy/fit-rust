@@ -167,7 +167,7 @@ impl From<Value> for i16 {
     fn from(item: Value) -> Self {
         match item {
             Value::I16(v) => v,
-            _ => panic!("can't call this on a non-u16 variant"),
+            _ => panic!("can't call this on a non-i16 variant"),
         }
     }
 }
@@ -185,7 +185,7 @@ impl From<Value> for i32 {
     fn from(item: Value) -> Self {
         match item {
             Value::I32(v) => v,
-            _ => panic!("can't call this on a non-u32 variant"),
+            _ => panic!("can't call this on a non-i32 variant"),
         }
     }
 }
@@ -204,7 +204,7 @@ impl From<Value> for f32 {
     fn from(item: Value) -> Self {
         match item {
             Value::F32(v) => v,
-            _ => panic!("can't call this on a non-u32 variant"),
+            _ => panic!("can't call this on a non-f32 variant"),
         }
     }
 }
@@ -213,7 +213,7 @@ impl From<Value> for &str {
     fn from(item: Value) -> Self {
         match item {
             Value::Enum(v) => v,
-            _ => panic!("can't call this on a non-u32 variant"),
+            _ => panic!("can't call this on a non-str variant"),
         }
     }
 }
@@ -222,7 +222,8 @@ impl From<Value> for String {
     fn from(item: Value) -> Self {
         match item {
             Value::Enum(v) => v.into(),
-            _ => panic!("can't call this on a non-u32 variant"),
+            Value::String(v) => v,
+            _ => panic!("can't call this on a non-String variant"),
         }
     }
 }
