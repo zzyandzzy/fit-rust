@@ -1,18 +1,14 @@
-use binrw::BinResult;
-use fit_rust::protocol::message_type::MessageType;
 use fit_rust::Fit;
 use std::fs;
 
-fn main() -> BinResult<()> {
+fn main() {
     let file = fs::read("test.fit").unwrap();
-    let fit: Fit = Fit::read(file)?;
+    let fit: Fit = Fit::read(file).unwrap();
     for data in &fit.data {
         match data.message.message_type {
-            MessageType::Record => {
-                println!("Record: {:?}", data);
+            _ => {
+                println!("Record: {:?}", data.message);
             }
-            _ => {}
         }
     }
-    Ok(())
 }

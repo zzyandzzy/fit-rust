@@ -208,3 +208,21 @@ impl From<Value> for f32 {
         }
     }
 }
+
+impl From<Value> for &str {
+    fn from(item: Value) -> Self {
+        match item {
+            Value::Enum(v) => v,
+            _ => panic!("can't call this on a non-u32 variant"),
+        }
+    }
+}
+
+impl From<Value> for String {
+    fn from(item: Value) -> Self {
+        match item {
+            Value::Enum(v) => v.into(),
+            _ => panic!("can't call this on a non-u32 variant"),
+        }
+    }
+}
