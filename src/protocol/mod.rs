@@ -105,6 +105,27 @@ impl DefinitionMessage {
             Endian::Little => 0x0,
         }
     }
+
+    fn new(
+        is_big: bool,
+        num_fields: u8,
+        fields: Vec<FieldDefinition>,
+        msg_type: MessageType,
+    ) -> Self {
+        let endian = match is_big {
+            true => Endian::Big,
+            false => Endian::Little,
+        };
+        Self {
+            reserved: 0,
+            endian,
+            global_message_number: msg_type.to_primitive(),
+            num_fields,
+            fields,
+            dev_num_fields: None,
+            dev_fields: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -234,6 +255,16 @@ impl FitMessageHeader {
                 local_num: x & LOCAL_MESSAGE_NUMBER_MASK,
                 time_offset: None,
             }
+        }
+    }
+
+    fn new(is_def: bool, local_num: u8) -> Self {
+        Self {
+            compressed_header: false,
+            definition: is_def,
+            dev_fields: false,
+            local_num,
+            time_offset: None,
         }
     }
 }
