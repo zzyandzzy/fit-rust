@@ -106,7 +106,7 @@ impl DefinitionMessage {
         }
     }
 
-    fn new(
+    pub fn new(
         is_big: bool,
         num_fields: u8,
         fields: Vec<FieldDefinition>,
@@ -258,7 +258,7 @@ impl FitMessageHeader {
         }
     }
 
-    fn new(is_def: bool, local_num: u8) -> Self {
+    pub fn new(is_def: bool, local_num: u8) -> Self {
         Self {
             compressed_header: false,
             definition: is_def,
