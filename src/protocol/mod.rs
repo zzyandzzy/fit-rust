@@ -168,6 +168,16 @@ pub struct FieldDefinition {
     pub base_type: FieldDefBaseType,
 }
 
+impl FieldDefinition {
+    pub fn new(def_num: u8, size: u8, is_big: bool, val: u8) -> Self {
+        Self {
+            definition_number: def_num,
+            size,
+            base_type: FieldDefBaseType::new(is_big, val),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[binrw]
 #[br(map = FieldDefBaseType::from_bytes)]
@@ -196,6 +206,14 @@ impl FieldDefBaseType {
             val: x & FIELD_DEFINITION_BASE_NUMBER,
             endian,
         }
+    }
+
+    pub fn new(is_big: bool, val: u8) -> Self {
+        let endian = match is_big {
+            true => Endian::Big,
+            false => Endian::Little,
+        };
+        Self { val, endian }
     }
 }
 
