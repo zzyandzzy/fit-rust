@@ -53,11 +53,17 @@ pub struct FitHeader {
     pub crc: Option<u16>,
 }
 
+#[derive(Clone, Debug)]
+pub enum FitMessage {
+    Definition(FitDefinitionMessage),
+    Data(FitDataMessage),
+}
+
 #[derive(BinWrite, Debug, Clone, PartialEq)]
 #[bw(little)]
 pub struct FitDefinitionMessage {
     pub header: FitMessageHeader,
-    pub message: DefinitionMessage,
+    pub data: DefinitionMessage,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -104,16 +110,16 @@ impl DefinitionMessage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FitDataMessage {
     pub header: FitMessageHeader,
-    pub message: DataMessage,
+    pub data: DataMessage,
 }
 
 #[derive(Clone, Debug, PartialEq, BinRead)]
 #[br(import(definition: &FitDefinitionMessage))]
 pub struct DataMessage {
-    #[br(parse_with = message_type::parse_message_type, args(definition.message.global_message_number))]
+    #[br(parse_with = message_type::parse_message_type, args(definition.data.global_message_number))]
     pub message_type: MessageType,
 
-    #[br(parse_with = DataField::parse_data_field, args(message_type, &definition.message.fields), is_little = (definition.message.endian == Endian::Little))]
+    #[br(parse_with = DataField::parse_data_field, args(message_type, &definition.data.fields), is_little = (definition.data.endian == Endian::Little))]
     pub values: Vec<DataField>,
 }
 

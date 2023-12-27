@@ -26,16 +26,20 @@ Here are some basic examples of how to use the fit-rust library.
 **Reading FIT Files**
 
 ```rust
+use fit_rust::protocol::FitMessage;
 use fit_rust::Fit;
 use std::fs;
 
 fn main() {
-    let file = fs::read("test.fit").unwrap();
+    let file = fs::read("tests/test.fit").unwrap();
     let fit: Fit = Fit::read(file).unwrap();
     for data in &fit.data {
-        match data.message.message_type {
-            _ => {
-                println!("Record: {:?}", data.message);
+        match data {
+            FitMessage::Definition(msg) => {
+                println!("Definition: {:?}", msg.data);
+            }
+            FitMessage::Data(msg) => {
+                println!("Data: {:?}", msg.data);
             }
         }
     }
@@ -48,9 +52,9 @@ use fit_rust::Fit;
 use std::fs;
 
 fn main() {
-    let file = fs::read("test.fit").unwrap();
+    let file = fs::read("tests/test.fit").unwrap();
     let fit: Fit = Fit::read(file).unwrap();
-    fit.write("test1.fit").unwrap();
+    fit.write("tests/write-test.fit").unwrap();
 }
 ```
 
@@ -59,7 +63,14 @@ fn main() {
 use fit_rust::Fit;
 
 fn main() {
-    Fit::merge(vec!["test1.fit", "test2.fit", "test3.fit"], "test.fit").unwrap();
+    Fit::merge(
+        vec![
+            "tests/ride-0-2023-09-29-12-49-21.fit",
+            "tests/ride-0-2023-09-29-09-41-54.fit",
+        ],
+        "tests/merge.fit",
+    )
+        .unwrap();
 }
 ```
 

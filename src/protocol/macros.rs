@@ -25,7 +25,7 @@ macro_rules! merge_stats {
 
     // Summation case
     (sum $field_num:expr, $total_value:expr, $session:expr, $($rest:tt)*) => {
-         if let Some(value) = get_field_value($field_num, &$session.message.values) {
+         if let Some(value) = get_field_value($field_num, &$session.data.values) {
             match value {
                 Value::U32(val) => {
                     if let Value::U32(total_value) = $total_value {
@@ -45,7 +45,7 @@ macro_rules! merge_stats {
 
     // Maximum value case
     (max $field_num:expr, $max_value:expr, $session:expr, $($rest:tt)*) => {
-         if let Some(value) = get_field_value($field_num, &$session.message.values) {
+         if let Some(value) = get_field_value($field_num, &$session.data.values) {
             match value {
                 Value::Time(val) => {
                     if let Value::Time(max_val) = $max_value {
@@ -80,7 +80,7 @@ macro_rules! merge_stats {
 
     // Minimum value case
     (min $field_num:expr, $min_value:expr, $session:expr, $($rest:tt)*) => {
-        if let Some(value) = get_field_value($field_num, &$session.message.values) {
+        if let Some(value) = get_field_value($field_num, &$session.data.values) {
             match value {
                 Value::Time(val) => {
                     if let Value::Time(min_value) = $min_value {
@@ -106,7 +106,7 @@ macro_rules! merge_stats {
 
     // Average value case
     (avg $field_num:expr, $total_value:expr, $count:expr, $session:expr, $($rest:tt)*) => {
-         if let Some(value) = get_field_value($field_num, &$session.message.values) {
+         if let Some(value) = get_field_value($field_num, &$session.data.values) {
             match value {
                 Value::U16(val) => {
                     if let Value::I32(total_value) = $total_value {

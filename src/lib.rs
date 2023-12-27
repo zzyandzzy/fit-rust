@@ -6,10 +6,10 @@ use crate::protocol::message_type::MessageType;
 use crate::protocol::value::Value;
 use crate::protocol::{
     calculate_fit_crc, DataMessage, DefinitionMessage, FitDataMessage, FitDefinitionMessage,
-    FitHeader, FitMessageHeader,
+    FitHeader, FitMessage, FitMessageHeader,
 };
 use binrw::{BinReaderExt, BinResult, BinWrite, Endian, Error};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::fs::{read, write};
@@ -21,9 +21,7 @@ use std::path::Path;
 pub struct Fit {
     pub header: FitHeader,
 
-    pub data: Vec<FitDataMessage>,
-
-    pub map: HashMap<u8, VecDeque<FitDefinitionMessage>>,
+    pub data: Vec<FitMessage>,
 }
 
 impl Debug for Fit {
@@ -36,9 +34,9 @@ impl Fit {
     pub fn read(buf: Vec<u8>) -> BinResult<Self> {
         let mut cursor = Cursor::new(buf);
         let header: FitHeader = cursor.read_ne()?;
-        let mut map: HashMap<u8, VecDeque<FitDefinitionMessage>> = HashMap::new();
+        let mut queue: VecDeque<(u8, FitDefinitionMessage)> = VecDeque::new();
 
-        let mut data: Vec<FitDataMessage> = Vec::new();
+        let mut data: Vec<FitMessage> = Vec::new();
         loop {
             let message_header: FitMessageHeader = cursor.read_ne()?;
             match message_header.definition {
@@ -48,33 +46,35 @@ impl Fit {
                     }
                     let definition_message: DefinitionMessage =
                         cursor.read_ne_args((message_header.dev_fields,))?;
-                    map.entry(message_header.local_num)
-                        .or_insert_with(VecDeque::new)
-                        .push_front(FitDefinitionMessage {
-                            header: message_header,
-                            message: definition_message,
-                        });
+
+                    let local_num = message_header.local_num;
+                    let def = FitDefinitionMessage {
+                        header: message_header,
+                        data: definition_message,
+                    };
+                    data.push(FitMessage::Definition(def.clone()));
+                    queue.push_front((local_num, def));
                 }
                 false => {
-                    let definition = match map.get(&message_header.local_num) {
+                    let definition = match queue.iter().find(|x| x.0 == message_header.local_num) {
                         None => continue,
-                        Some(queue) => queue.front().unwrap(),
+                        Some((_, def)) => def,
                     };
                     let data_message: DataMessage = cursor.read_ne_args((definition,))?;
                     if data_message.message_type == MessageType::None {
                         continue;
                     }
-                    data.push(FitDataMessage {
+                    data.push(FitMessage::Data(FitDataMessage {
                         header: message_header,
-                        message: data_message,
-                    });
+                        data: data_message,
+                    }));
                     if cursor.position() >= (header.data_size + header.header_size as u32) as u64 {
                         break;
                     }
                 }
             }
         }
-        Ok(Fit { header, data, map })
+        Ok(Fit { header, data })
     }
 
     pub fn write<P: AsRef<Path>>(&self, file: P) -> BinResult<()> {
@@ -111,45 +111,32 @@ impl Fit {
     }
 
     pub(crate) fn write_buf(&self, buf: &mut Vec<u8>) -> BinResult<FitHeader> {
-        let mut map = self.map.clone();
-        let mut global_def_map: HashMap<u16, DefinitionMessage> = HashMap::new();
-        for (_, queue) in &map {
-            for value in queue {
-                global_def_map.insert(value.message.global_message_number, value.message.clone());
-            }
-        }
-
+        let mut queue: VecDeque<(u8, FitDefinitionMessage)> = VecDeque::new();
         let mut writer = Cursor::new(buf);
         skip_bytes(&mut writer, self.header.header_size);
-        for item in &self.data {
-            let definition_message = match map.get_mut(&item.header.local_num) {
-                None => continue,
-                Some(queue) => queue.pop_back(),
-            };
-            match definition_message {
-                None => {}
-                Some(def) => {
-                    def.write(&mut writer)?;
+        for massage in &self.data {
+            match massage {
+                FitMessage::Definition(msg) => {
+                    msg.header.write(&mut writer)?;
+                    msg.data.write(&mut writer)?;
+                    let local_num = msg.header.local_num;
+                    queue.push_front((local_num, msg.clone()));
                 }
-            }
-            if &item.message.message_type == &MessageType::None {
-                continue;
-            }
-            let def_msg = global_def_map.get(&item.message.message_type.to_primitive());
-            match def_msg {
-                None => {
-                    eprintln!(
-                        "Error definition message is not define! message type: {:?}",
-                        item.message.message_type
-                    );
-                    return Err(Error::Io(binrw::io::Error::new(
-                        binrw::io::ErrorKind::UnexpectedEof,
-                        "Error definition message is not define!",
-                    )));
-                }
-                Some(def_msg) => {
-                    item.header.write(&mut writer)?;
-                    item.message.write(&mut writer, def_msg)?;
+                FitMessage::Data(msg) => {
+                    let message_header = &msg.header;
+                    let definition = match queue.iter().find(|x| x.0 == message_header.local_num) {
+                        None => None,
+                        Some((_, def)) => Some(def),
+                    };
+                    match definition {
+                        None => {}
+                        Some(def) => {
+                            if &msg.data.message_type != &MessageType::None {
+                                msg.header.write(&mut writer)?;
+                                msg.data.write(&mut writer, &def.data)?;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -187,7 +174,12 @@ impl Fit {
                 .data
                 .iter()
                 .enumerate()
-                .filter(|(_, message)| matches!(message.message.message_type, MessageType::Record))
+                .filter(|(_, message)| match message {
+                    FitMessage::Definition(_) => false,
+                    FitMessage::Data(msg) => {
+                        return matches!(msg.data.message_type, MessageType::Record);
+                    }
+                })
                 .map(|(i, _)| i)
                 .collect();
 
@@ -221,7 +213,7 @@ impl Fit {
         match session {
             None => {}
             Some(session) => {
-                self.data[index] = session;
+                self.data[index] = FitMessage::Data(session);
             }
         }
     }
@@ -319,64 +311,52 @@ impl Fit {
 
         // Update merged session fields
         // max
-        update_field!(merged_session.message.values, 253, max_stop_timestamp);
-        update_field!(merged_session.message.values, 15, max_speed);
-        update_field!(merged_session.message.values, 21, max_power);
-        update_field!(merged_session.message.values, 50, max_altitude);
-        update_field!(merged_session.message.values, 55, max_pos_grade);
-        update_field!(merged_session.message.values, 56, max_neg_grade);
-        update_field!(merged_session.message.values, 17, max_heart_rate);
-        update_field!(merged_session.message.values, 19, max_cadence);
-        update_field!(merged_session.message.values, 58, max_temperature);
+        update_field!(merged_session.data.values, 253, max_stop_timestamp);
+        update_field!(merged_session.data.values, 15, max_speed);
+        update_field!(merged_session.data.values, 21, max_power);
+        update_field!(merged_session.data.values, 50, max_altitude);
+        update_field!(merged_session.data.values, 55, max_pos_grade);
+        update_field!(merged_session.data.values, 56, max_neg_grade);
+        update_field!(merged_session.data.values, 17, max_heart_rate);
+        update_field!(merged_session.data.values, 19, max_cadence);
+        update_field!(merged_session.data.values, 58, max_temperature);
         // min
-        update_field!(merged_session.message.values, 2, min_start_timestamp);
-        update_field!(merged_session.message.values, 71, min_altitude);
-        update_field!(merged_session.message.values, 64, min_heart_rate);
+        update_field!(merged_session.data.values, 2, min_start_timestamp);
+        update_field!(merged_session.data.values, 71, min_altitude);
+        update_field!(merged_session.data.values, 64, min_heart_rate);
         // sum
-        update_field!(merged_session.message.values, 7, total_elapsed_time);
-        update_field!(merged_session.message.values, 8, total_timer_time);
-        update_field!(merged_session.message.values, 9, total_distance);
-        update_field!(merged_session.message.values, 59, total_moving_time);
-        update_field!(merged_session.message.values, 11, total_calories);
-        update_field!(merged_session.message.values, 22, total_ascent);
-        update_field!(merged_session.message.values, 23, total_descent);
+        update_field!(merged_session.data.values, 7, total_elapsed_time);
+        update_field!(merged_session.data.values, 8, total_timer_time);
+        update_field!(merged_session.data.values, 9, total_distance);
+        update_field!(merged_session.data.values, 59, total_moving_time);
+        update_field!(merged_session.data.values, 11, total_calories);
+        update_field!(merged_session.data.values, 22, total_ascent);
+        update_field!(merged_session.data.values, 23, total_descent);
         // avg
         if avg_speed_count > 0 {
             let avg_speed = <Value as Into<i32>>::into(avg_speed).div(avg_speed_count);
-            update_field!(
-                merged_session.message.values,
-                14,
-                Value::U16(avg_speed as u16)
-            );
+            update_field!(merged_session.data.values, 14, Value::U16(avg_speed as u16));
         }
         if avg_power_count > 0 {
             let avg_power = <Value as Into<i32>>::into(avg_power).div(avg_power_count);
-            update_field!(
-                merged_session.message.values,
-                20,
-                Value::U16(avg_power as u16)
-            );
+            update_field!(merged_session.data.values, 20, Value::U16(avg_power as u16));
         }
         if avg_altitude_count > 0 {
             let avg_altitude = <Value as Into<i32>>::into(avg_altitude).div(avg_altitude_count);
             update_field!(
-                merged_session.message.values,
+                merged_session.data.values,
                 49,
                 Value::U16(avg_altitude as u16)
             );
         }
         if avg_grade_count > 0 {
             let avg_grade = <Value as Into<i32>>::into(avg_grade).div(avg_grade_count);
-            update_field!(
-                merged_session.message.values,
-                52,
-                Value::I16(avg_grade as i16)
-            );
+            update_field!(merged_session.data.values, 52, Value::I16(avg_grade as i16));
         }
         if avg_pos_grade_count > 0 {
             let avg_pos_grade = <Value as Into<i32>>::into(avg_pos_grade).div(avg_pos_grade_count);
             update_field!(
-                merged_session.message.values,
+                merged_session.data.values,
                 53,
                 Value::I16(avg_pos_grade as i16)
             );
@@ -384,7 +364,7 @@ impl Fit {
         if avg_neg_grade_count > 0 {
             let avg_neg_grade = <Value as Into<i32>>::into(avg_neg_grade).div(avg_neg_grade_count);
             update_field!(
-                merged_session.message.values,
+                merged_session.data.values,
                 54,
                 Value::I16(avg_neg_grade as i16)
             );
@@ -393,7 +373,7 @@ impl Fit {
             let avg_pos_vertical_speed = <Value as Into<i32>>::into(avg_pos_vertical_speed)
                 .div(avg_pos_vertical_speed_count);
             update_field!(
-                merged_session.message.values,
+                merged_session.data.values,
                 60,
                 Value::I16(avg_pos_vertical_speed as i16)
             );
@@ -402,7 +382,7 @@ impl Fit {
             let avg_neg_vertical_speed = <Value as Into<i32>>::into(avg_neg_vertical_speed)
                 .div(avg_neg_vertical_speed_count);
             update_field!(
-                merged_session.message.values,
+                merged_session.data.values,
                 61,
                 Value::I16(avg_neg_vertical_speed as i16)
             );
@@ -411,24 +391,20 @@ impl Fit {
             let avg_heart_rate =
                 <Value as Into<i32>>::into(avg_heart_rate).div(avg_heart_rate_count);
             update_field!(
-                merged_session.message.values,
+                merged_session.data.values,
                 16,
                 Value::U8(avg_heart_rate as u8)
             );
         }
         if avg_cadence_count > 0 {
             let avg_cadence = <Value as Into<i32>>::into(avg_cadence).div(avg_cadence_count);
-            update_field!(
-                merged_session.message.values,
-                18,
-                Value::U8(avg_cadence as u8)
-            );
+            update_field!(merged_session.data.values, 18, Value::U8(avg_cadence as u8));
         }
         if avg_temperature_count > 0 {
             let avg_temperature =
                 <Value as Into<i32>>::into(avg_temperature).div(avg_temperature_count);
             update_field!(
-                merged_session.message.values,
+                merged_session.data.values,
                 57,
                 Value::I8(avg_temperature as i8)
             );
@@ -439,12 +415,15 @@ impl Fit {
 
     pub fn get_session(&self) -> Option<(usize, FitDataMessage)> {
         for (index, message) in self.data.iter().enumerate() {
-            match message.message.message_type {
-                MessageType::Session => {
-                    return Some((index, message.clone()));
-                }
-                _ => {}
-            }
+            match message {
+                FitMessage::Definition(_) => {}
+                FitMessage::Data(msg) => match msg.data.message_type {
+                    MessageType::Session => {
+                        return Some((index, msg.clone()));
+                    }
+                    _ => {}
+                },
+            };
         }
         None
     }

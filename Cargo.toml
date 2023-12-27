@@ -1,6 +1,6 @@
 [package]
 name = "fit-rust"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 license = "MIT"
 authors = ["zzyandzzy <zzy.main@gmail.com>"]
@@ -15,7 +15,3 @@ exclude = ["tests/*"]
 copyless = "0.1.5"
 binrw = { version = "0.13.0" }
 paste = "1.0"
-
-[[bin]]
-name = "test_std"
-path = "bin/test_std.rs"
