@@ -7,7 +7,7 @@ fn main() {
     for data in &fit.data {
         match data.message.message_type {
             _ => {
-                println!("Record: {:?}", data.message);
+                println!("{:?}", data.message);
             }
         }
     }
