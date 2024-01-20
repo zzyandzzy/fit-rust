@@ -250,6 +250,8 @@ impl Fit {
         let mut avg_speed_count = 0_i32;
         let mut avg_power = Value::I32(0_i32);
         let mut avg_power_count = 0_i32;
+        let mut normal_power = Value::I32(0_i32);
+        let mut normal_power_count = 0_i32;
         let mut avg_altitude = Value::I32(0_i32);
         let mut avg_altitude_count = 0_i32;
         let mut avg_grade = Value::I32(0_i32);
@@ -293,10 +295,10 @@ impl Fit {
                 sum 11, total_calories, session,
                 sum 22, total_ascent, session,
                 sum 23, total_descent, session,
-                sum 23, total_descent, session,
                 // avg
                 avg 14, avg_speed, avg_speed_count, session,
                 avg 20, avg_power, avg_power_count, session,
+                avg 34, normal_power, normal_power_count, session,
                 avg 49, avg_altitude, avg_altitude_count, session,
                 avg 52, avg_grade, avg_grade_count, session,
                 avg 53, avg_pos_grade, avg_pos_grade_count, session,
@@ -340,6 +342,14 @@ impl Fit {
         if avg_power_count > 0 {
             let avg_power = <Value as Into<i32>>::into(avg_power).div(avg_power_count);
             update_field!(merged_session.data.values, 20, Value::U16(avg_power as u16));
+        }
+        if normal_power_count > 0 {
+            let normal_power = <Value as Into<i32>>::into(normal_power).div(normal_power_count);
+            update_field!(
+                merged_session.data.values,
+                34,
+                Value::U16(normal_power as u16)
+            );
         }
         if avg_altitude_count > 0 {
             let avg_altitude = <Value as Into<i32>>::into(avg_altitude).div(avg_altitude_count);
