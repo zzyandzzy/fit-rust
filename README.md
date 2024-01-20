@@ -2,7 +2,7 @@
 
 [中文](./README_zh.md)
 
-`fit-rust` is a Rust library designed for reading, writing, and merging Garmin Flexible and Interoperable Data Transfer (FIT) protocol files. It offers an efficient and type-safe approach to handle FIT files, suitable for sports and health data analysis and manipulation.
+`fit-rust` is a Rust library designed for reading, writing, and merging [Garmin Flexible and Interoperable Data Transfer (FIT)](https://developer.garmin.com/fit/protocol/) protocol files. It offers an efficient and type-safe approach to handle FIT files, suitable for sports and health data analysis and manipulation.
 
 ## Features
 

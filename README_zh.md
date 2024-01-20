@@ -2,7 +2,7 @@
 
 [English](./README_zh.md)
 
-`fit-rust` 是一个用 Rust 语言编写的库，用于读取、写入和合并 Garmin 的 Flexible and Interoperable Data Transfer (FIT) 文件。该库提供了一种高效且类型安全的方式来处理 FIT 文件，适用于运动和健康数据的分析和处理。
+`fit-rust` 是一个用 Rust 语言编写的库，用于读取、写入和合并 Garmin 的 [Flexible and Interoperable Data Transfer (FIT)](https://developer.garmin.com/fit/protocol/) 文件。该库提供了一种高效且类型安全的方式来处理 FIT 文件，适用于运动和健康数据的分析和处理。
 
 ## 功能
 
