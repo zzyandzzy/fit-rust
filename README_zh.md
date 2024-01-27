@@ -57,6 +57,8 @@ fn main() {
 }
 ```
 
+更多例子看: [xingzhe](https://github.com/zzyandzzy/igps_tools/tree/main/xingzhe)
+
 **合并 FIT 文件**
 ```rust
 use fit_rust::Fit;

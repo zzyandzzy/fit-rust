@@ -57,6 +57,7 @@ fn main() {
     fit.write("tests/write-test.fit").unwrap();
 }
 ```
+See more examples: [xingzhe](https://github.com/zzyandzzy/igps_tools/tree/main/xingzhe)
 
 **Merging FIT Files**
 ```rust
