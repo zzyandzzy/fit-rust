@@ -1,3 +1,4 @@
+use fit_rust::protocol::message_type::MessageType;
 use fit_rust::protocol::FitMessage;
 use fit_rust::Fit;
 use std::fs;
@@ -10,8 +11,11 @@ fn main() {
             FitMessage::Definition(msg) => {
                 println!("Definition: {:?}", msg.data);
             }
-            FitMessage::Data(msg) => {
-                println!("Data: {:?}", msg.data);
+            FitMessage::Data(msg) if msg.data.message_type == MessageType::FileId => {
+                println!("FileId data type: {:?}", msg.data);
+            }
+            FitMessage::Data(_) => {
+                // Other data type is here
             }
         }
     }
