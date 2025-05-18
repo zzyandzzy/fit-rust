@@ -48,10 +48,6 @@ impl DataField {
         let mut values = Vec::with_capacity(fields.len());
         if message_type == MessageType::None {
             let size_sum: u8 = fields.iter().map(|field| field.size).sum();
-            println!(
-                "message_type == MessageType::None, skip_bytes: {}",
-                size_sum
-            );
             skip_bytes(reader, size_sum);
         } else {
             for fd in fields.iter() {
