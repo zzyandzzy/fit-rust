@@ -1535,6 +1535,7 @@ fn match_field_workout_step(k: usize) -> FieldType {
         11 => FieldType::Uint16,
         12 => FieldType::Uint16,
         13 => FieldType::FitBaseUnit,
+        18 => FieldType::Uint8,
         19 => FieldType::WktStepTarget,
         20 => FieldType::Uint32,
         21 => FieldType::Uint32,
