@@ -153,7 +153,7 @@ impl Fit {
     #[allow(unused)]
     pub fn merge<P: AsRef<Path>>(files: Vec<P>, path: P) -> BinResult<()> {
         if files.is_empty() || files.len() <= 1 {
-            eprintln!("Error files is empty: {:?}", files.len());
+            // eprintln!("Error files is empty: {:?}", files.len());
             return Err(Error::Io(binrw::io::Error::new(
                 binrw::io::ErrorKind::UnexpectedEof,
                 "Error files is empty!",
