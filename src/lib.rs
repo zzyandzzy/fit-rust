@@ -1,15 +1,16 @@
 pub mod protocol;
 
+use crate::protocol::data_field::FieldNum;
 use crate::protocol::io::{skip_bytes, write_bin};
 use crate::protocol::macros::get_field_value;
 use crate::protocol::message_type::MessageType;
 use crate::protocol::value::Value;
 use crate::protocol::{
-    calculate_fit_crc, DataMessage, DefinitionMessage, FitDataMessage, FitDefinitionMessage,
-    FitHeader, FitMessage, FitMessageHeader,
+    calculate_fit_crc, DataMessage, DefinitionMessage, FieldDefBaseType, FieldDescription,
+    FitDataMessage, FitDefinitionMessage, FitHeader, FitMessage, FitMessageHeader,
 };
 use binrw::{BinReaderExt, BinResult, BinWrite, Endian, Error};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::fs::{read, write};
@@ -35,15 +36,13 @@ impl Fit {
         let mut cursor = Cursor::new(buf);
         let header: FitHeader = cursor.read_ne()?;
         let mut queue: VecDeque<(u8, FitDefinitionMessage)> = VecDeque::new();
+        let mut dev_field_descriptions: HashMap<(u8, u8), FieldDescription> = HashMap::new();
 
         let mut data: Vec<FitMessage> = Vec::new();
         loop {
             let message_header: FitMessageHeader = cursor.read_ne()?;
             match message_header.definition {
                 true => {
-                    if message_header.dev_fields {
-                        unimplemented!("message_header.dev_fields is unimplemented");
-                    }
                     let definition_message: DefinitionMessage =
                         cursor.read_ne_args((message_header.dev_fields,))?;
 
@@ -60,9 +59,51 @@ impl Fit {
                         None => continue,
                         Some((_, def)) => def,
                     };
-                    let data_message: DataMessage = cursor.read_ne_args((definition,))?;
+                    let data_message: DataMessage =
+                        cursor.read_ne_args((definition, &dev_field_descriptions))?;
                     if data_message.message_type == MessageType::None {
                         continue;
+                    }
+                    if data_message.message_type == MessageType::FieldDescription {
+                        // Save the developer field information
+                        let mut dev_field_description = FieldDescription {
+                            dev_data_index: 0,
+                            definition_number: 0,
+                            base_type: FieldDefBaseType::new(false, 0),
+                        };
+                        for field in data_message.values.iter() {
+                            if let FieldNum::GlobalProfile(field_num) = field.field_num {
+                                match field_num {
+                                    0 => {
+                                        if let Value::U8(val) = field.value {
+                                            dev_field_description.dev_data_index = val;
+                                        }
+                                    }
+                                    1 => {
+                                        if let Value::U8(val) = field.value {
+                                            dev_field_description.definition_number = val;
+                                        }
+                                    }
+                                    2 => {
+                                        let Value::U8(base_type_byte) = field.value else {
+                                            unreachable!("base_type is not a byte")
+                                        };
+                                        dev_field_description.base_type.val =
+                                        // Temp this actually needs parsing
+                                        // like FieldDefBaseType::from(base_type_byte);
+                                        base_type_byte & 31; //FIELD_DEFINITION_BASE_NUMBER;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        dev_field_descriptions.insert(
+                            (
+                                dev_field_description.dev_data_index,
+                                dev_field_description.definition_number,
+                            ),
+                            dev_field_description,
+                        );
                     }
                     data.push(FitMessage::Data(FitDataMessage {
                         header: message_header,
@@ -274,80 +315,164 @@ impl Fit {
         for session in sessions {
             merge_stats!(
                 // max
-                max 253, max_stop_timestamp, session,
-                max 15, max_speed, session,
-                max 21, max_power, session,
-                max 50, max_altitude, session,
-                max 55, max_pos_grade, session,
-                max 56, max_neg_grade, session,
-                max 17, max_heart_rate, session,
-                max 19, max_cadence, session,
-                max 58, max_temperature, session,
+                max FieldNum::GlobalProfile(253), max_stop_timestamp, session,
+                max FieldNum::GlobalProfile(15), max_speed, session,
+                max FieldNum::GlobalProfile(21), max_power, session,
+                max FieldNum::GlobalProfile(50), max_altitude, session,
+                max FieldNum::GlobalProfile(55), max_pos_grade, session,
+                max FieldNum::GlobalProfile(56), max_neg_grade, session,
+                max FieldNum::GlobalProfile(17), max_heart_rate, session,
+                max FieldNum::GlobalProfile(19), max_cadence, session,
+                max FieldNum::GlobalProfile(58), max_temperature, session,
                 // min
-                min 2, min_start_timestamp, session,
-                min 71, min_altitude, session,
-                min 64, min_heart_rate, session,
+                min FieldNum::GlobalProfile(2), min_start_timestamp, session,
+                min FieldNum::GlobalProfile(71), min_altitude, session,
+                min FieldNum::GlobalProfile(64), min_heart_rate, session,
                 // sum
-                sum 7, total_elapsed_time, session,
-                sum 8, total_timer_time, session,
-                sum 9, total_distance, session,
-                sum 59, total_moving_time, session,
-                sum 11, total_calories, session,
-                sum 22, total_ascent, session,
-                sum 23, total_descent, session,
+                sum FieldNum::GlobalProfile(7), total_elapsed_time, session,
+                sum FieldNum::GlobalProfile(8), total_timer_time, session,
+                sum FieldNum::GlobalProfile(9), total_distance, session,
+                sum FieldNum::GlobalProfile(59), total_moving_time, session,
+                sum FieldNum::GlobalProfile(11), total_calories, session,
+                sum FieldNum::GlobalProfile(22), total_ascent, session,
+                sum FieldNum::GlobalProfile(23), total_descent, session,
                 // avg
-                avg 14, avg_speed, avg_speed_count, session,
-                avg 20, avg_power, avg_power_count, session,
-                avg 34, normal_power, normal_power_count, session,
-                avg 49, avg_altitude, avg_altitude_count, session,
-                avg 52, avg_grade, avg_grade_count, session,
-                avg 53, avg_pos_grade, avg_pos_grade_count, session,
-                avg 54, avg_neg_grade, avg_neg_grade_count, session,
-                avg 60, avg_pos_vertical_speed, avg_pos_vertical_speed_count, session,
-                avg 61, avg_neg_vertical_speed, avg_neg_vertical_speed_count, session,
-                avg 16, avg_heart_rate, avg_heart_rate_count, session,
-                avg 18, avg_cadence, avg_cadence_count, session,
-                avg 57, avg_temperature, avg_temperature_count, session,
+                avg FieldNum::GlobalProfile(14), avg_speed, avg_speed_count, session,
+                avg FieldNum::GlobalProfile(20), avg_power, avg_power_count, session,
+                avg FieldNum::GlobalProfile(34), normal_power, normal_power_count, session,
+                avg FieldNum::GlobalProfile(49), avg_altitude, avg_altitude_count, session,
+                avg FieldNum::GlobalProfile(52), avg_grade, avg_grade_count, session,
+                avg FieldNum::GlobalProfile(53), avg_pos_grade, avg_pos_grade_count, session,
+                avg FieldNum::GlobalProfile(54), avg_neg_grade, avg_neg_grade_count, session,
+                avg FieldNum::GlobalProfile(60), avg_pos_vertical_speed, avg_pos_vertical_speed_count, session,
+                avg FieldNum::GlobalProfile(61), avg_neg_vertical_speed, avg_neg_vertical_speed_count, session,
+                avg FieldNum::GlobalProfile(16), avg_heart_rate, avg_heart_rate_count, session,
+                avg FieldNum::GlobalProfile(18), avg_cadence, avg_cadence_count, session,
+                avg FieldNum::GlobalProfile(57), avg_temperature, avg_temperature_count, session,
             );
         }
 
         // Update merged session fields
         // max
-        update_field!(merged_session.data.values, 253, max_stop_timestamp);
-        update_field!(merged_session.data.values, 15, max_speed);
-        update_field!(merged_session.data.values, 21, max_power);
-        update_field!(merged_session.data.values, 50, max_altitude);
-        update_field!(merged_session.data.values, 55, max_pos_grade);
-        update_field!(merged_session.data.values, 56, max_neg_grade);
-        update_field!(merged_session.data.values, 17, max_heart_rate);
-        update_field!(merged_session.data.values, 19, max_cadence);
-        update_field!(merged_session.data.values, 58, max_temperature);
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(253),
+            max_stop_timestamp
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(15),
+            max_speed
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(21),
+            max_power
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(50),
+            max_altitude
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(55),
+            max_pos_grade
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(56),
+            max_neg_grade
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(17),
+            max_heart_rate
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(19),
+            max_cadence
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(58),
+            max_temperature
+        );
         // min
-        update_field!(merged_session.data.values, 2, min_start_timestamp);
-        update_field!(merged_session.data.values, 71, min_altitude);
-        update_field!(merged_session.data.values, 64, min_heart_rate);
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(2),
+            min_start_timestamp
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(71),
+            min_altitude
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(64),
+            min_heart_rate
+        );
         // sum
-        update_field!(merged_session.data.values, 7, total_elapsed_time);
-        update_field!(merged_session.data.values, 8, total_timer_time);
-        update_field!(merged_session.data.values, 9, total_distance);
-        update_field!(merged_session.data.values, 59, total_moving_time);
-        update_field!(merged_session.data.values, 11, total_calories);
-        update_field!(merged_session.data.values, 22, total_ascent);
-        update_field!(merged_session.data.values, 23, total_descent);
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(7),
+            total_elapsed_time
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(8),
+            total_timer_time
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(9),
+            total_distance
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(59),
+            total_moving_time
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(11),
+            total_calories
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(22),
+            total_ascent
+        );
+        update_field!(
+            merged_session.data.values,
+            FieldNum::GlobalProfile(23),
+            total_descent
+        );
         // avg
         if avg_speed_count > 0 {
             let avg_speed = <Value as Into<i32>>::into(avg_speed).div(avg_speed_count);
-            update_field!(merged_session.data.values, 14, Value::U16(avg_speed as u16));
+            update_field!(
+                merged_session.data.values,
+                FieldNum::GlobalProfile(14),
+                Value::U16(avg_speed as u16)
+            );
         }
         if avg_power_count > 0 {
             let avg_power = <Value as Into<i32>>::into(avg_power).div(avg_power_count);
-            update_field!(merged_session.data.values, 20, Value::U16(avg_power as u16));
+            update_field!(
+                merged_session.data.values,
+                FieldNum::GlobalProfile(20),
+                Value::U16(avg_power as u16)
+            );
         }
         if normal_power_count > 0 {
             let normal_power = <Value as Into<i32>>::into(normal_power).div(normal_power_count);
             update_field!(
                 merged_session.data.values,
-                34,
+                FieldNum::GlobalProfile(34),
                 Value::U16(normal_power as u16)
             );
         }
@@ -355,19 +480,23 @@ impl Fit {
             let avg_altitude = <Value as Into<i32>>::into(avg_altitude).div(avg_altitude_count);
             update_field!(
                 merged_session.data.values,
-                49,
+                FieldNum::GlobalProfile(49),
                 Value::U16(avg_altitude as u16)
             );
         }
         if avg_grade_count > 0 {
             let avg_grade = <Value as Into<i32>>::into(avg_grade).div(avg_grade_count);
-            update_field!(merged_session.data.values, 52, Value::I16(avg_grade as i16));
+            update_field!(
+                merged_session.data.values,
+                FieldNum::GlobalProfile(52),
+                Value::I16(avg_grade as i16)
+            );
         }
         if avg_pos_grade_count > 0 {
             let avg_pos_grade = <Value as Into<i32>>::into(avg_pos_grade).div(avg_pos_grade_count);
             update_field!(
                 merged_session.data.values,
-                53,
+                FieldNum::GlobalProfile(53),
                 Value::I16(avg_pos_grade as i16)
             );
         }
@@ -375,7 +504,7 @@ impl Fit {
             let avg_neg_grade = <Value as Into<i32>>::into(avg_neg_grade).div(avg_neg_grade_count);
             update_field!(
                 merged_session.data.values,
-                54,
+                FieldNum::GlobalProfile(54),
                 Value::I16(avg_neg_grade as i16)
             );
         }
@@ -384,7 +513,7 @@ impl Fit {
                 .div(avg_pos_vertical_speed_count);
             update_field!(
                 merged_session.data.values,
-                60,
+                FieldNum::GlobalProfile(60),
                 Value::I16(avg_pos_vertical_speed as i16)
             );
         }
@@ -393,7 +522,7 @@ impl Fit {
                 .div(avg_neg_vertical_speed_count);
             update_field!(
                 merged_session.data.values,
-                61,
+                FieldNum::GlobalProfile(61),
                 Value::I16(avg_neg_vertical_speed as i16)
             );
         }
@@ -402,20 +531,24 @@ impl Fit {
                 <Value as Into<i32>>::into(avg_heart_rate).div(avg_heart_rate_count);
             update_field!(
                 merged_session.data.values,
-                16,
+                FieldNum::GlobalProfile(16),
                 Value::U8(avg_heart_rate as u8)
             );
         }
         if avg_cadence_count > 0 {
             let avg_cadence = <Value as Into<i32>>::into(avg_cadence).div(avg_cadence_count);
-            update_field!(merged_session.data.values, 18, Value::U8(avg_cadence as u8));
+            update_field!(
+                merged_session.data.values,
+                FieldNum::GlobalProfile(18),
+                Value::U8(avg_cadence as u8)
+            );
         }
         if avg_temperature_count > 0 {
             let avg_temperature =
                 <Value as Into<i32>>::into(avg_temperature).div(avg_temperature_count);
             update_field!(
                 merged_session.data.values,
-                57,
+                FieldNum::GlobalProfile(57),
                 Value::I8(avg_temperature as i8)
             );
         }

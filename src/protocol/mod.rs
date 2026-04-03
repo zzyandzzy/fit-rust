@@ -18,6 +18,7 @@ use crate::protocol::data_field::DataField;
 use crate::protocol::get_field_string_value::FieldType;
 use crate::protocol::message_type::MessageType;
 use binrw::{binrw, BinRead, BinResult, BinWrite, Endian};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::{Seek, Write};
 
@@ -64,6 +65,12 @@ pub enum FitMessage {
 pub struct FitDefinitionMessage {
     pub header: FitMessageHeader,
     pub data: DefinitionMessage,
+}
+
+pub struct FieldDescription {
+    pub dev_data_index: u8,
+    pub definition_number: u8,
+    pub base_type: FieldDefBaseType,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -135,12 +142,12 @@ pub struct FitDataMessage {
 }
 
 #[derive(Clone, Debug, PartialEq, BinRead)]
-#[br(import(definition: &FitDefinitionMessage))]
+#[br(import(definition: &FitDefinitionMessage, dev_field_descriptions: &HashMap<(u8,u8), FieldDescription>))]
 pub struct DataMessage {
     #[br(parse_with = message_type::parse_message_type, args(definition.data.global_message_number))]
     pub message_type: MessageType,
 
-    #[br(parse_with = DataField::parse_data_field, args(message_type, &definition.data.fields), is_little = (definition.data.endian == Endian::Little))]
+    #[br(parse_with = DataField::parse_data_field, args(message_type, &definition.data.fields, &definition.data.dev_fields, dev_field_descriptions), is_little = (definition.data.endian == Endian::Little))]
     pub values: Vec<DataField>,
 }
 

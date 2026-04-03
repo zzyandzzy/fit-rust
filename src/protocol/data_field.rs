@@ -12,16 +12,24 @@ use crate::protocol::io::{
 use crate::protocol::message_type::MessageType;
 use crate::protocol::value::Value;
 use crate::protocol::{
-    DefinitionMessage, FieldDefinition, MatchFieldTypeFn, MatchOffsetFn, MatchScaleFn,
+    DefinitionMessage, DevFieldDefinition, FieldDefinition, FieldDescription, MatchFieldTypeFn,
+    MatchOffsetFn, MatchScaleFn,
 };
 use binrw::{BinResult, Endian};
 use copyless::VecHelper;
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::io::{Read, Seek, Write};
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum FieldNum {
+    GlobalProfile(u8),
+    DeveloperData(u8, u8),
+}
+
 #[derive(Clone, PartialEq)]
 pub struct DataField {
-    pub field_num: u8,
+    pub field_num: FieldNum,
 
     pub value: Value,
 }
@@ -33,7 +41,7 @@ impl Debug for DataField {
 }
 
 impl DataField {
-    pub fn new(fnum: u8, v: Value) -> Self {
+    pub fn new(fnum: FieldNum, v: Value) -> Self {
         Self {
             field_num: fnum,
             value: v,
@@ -44,6 +52,8 @@ impl DataField {
     pub fn parse_data_field(
         message_type: MessageType,
         fields: &Vec<FieldDefinition>,
+        dev_fields: &Option<Vec<DevFieldDefinition>>,
+        dev_field_descriptions: &HashMap<(u8, u8), FieldDescription>,
     ) -> BinResult<Vec<DataField>> {
         let mut values = Vec::with_capacity(fields.len());
         if message_type == MessageType::None {
@@ -56,16 +66,34 @@ impl DataField {
         } else {
             for fd in fields.iter() {
                 let data = DataField::read_next_field(fd.size, fd.base_type.val, reader, endian);
-                values
-                    .alloc()
-                    .init(DataField::new(fd.definition_number, data));
+                values.alloc().init(DataField::new(
+                    FieldNum::GlobalProfile(fd.definition_number),
+                    data,
+                ));
+            }
+            for dfd in dev_fields.as_ref().unwrap_or(&Vec::new()).iter() {
+                let field_desc = &dev_field_descriptions[&(dfd.dev_data_index, dfd.field_number)];
+                let data =
+                    DataField::read_next_field(dfd.size, field_desc.base_type.val, reader, endian);
+                values.alloc().init(DataField::new(
+                    FieldNum::DeveloperData(
+                        field_desc.dev_data_index,
+                        field_desc.definition_number,
+                    ),
+                    data,
+                ));
             }
             // check each value in case the raw value needs further processing
             let scales = get_field_scale_fn(message_type);
             let offsets = get_field_offset_fn(message_type);
             let fields = get_field_type_fn(message_type);
             for v in &mut values {
-                DataField::process_read_value(v, fields, scales, offsets);
+                match v.field_num {
+                    FieldNum::GlobalProfile(_) => {
+                        DataField::process_read_value(v, fields, scales, offsets);
+                    }
+                    FieldNum::DeveloperData(_, _) => {}
+                }
             }
         }
         // values.shrink_to_fit();
@@ -325,49 +353,54 @@ impl DataField {
         scales: MatchScaleFn,
         offsets: MatchOffsetFn,
     ) {
-        match fields(v.field_num as usize) {
-            FieldType::None => (),
-            FieldType::Coordinates => {
-                if let Value::I32(ref inner) = v.value {
-                    let coord = *inner as f32 * COORD_SEMICIRCLES_CALC;
-                    std::mem::replace(&mut v.value, Value::F32(coord));
-                }
-            }
-            FieldType::Timestamp | FieldType::DateTime => {
-                if let Value::U32(ref inner) = v.value {
-                    let date = *inner + PSEUDO_EPOCH;
-                    std::mem::replace(&mut v.value, Value::Time(date));
-                }
-            }
-            FieldType::LocalDateTime => {
-                if let Value::U32(ref inner) = v.value {
-                    let time = *inner + PSEUDO_EPOCH - 3600;
-                    std::mem::replace(&mut v.value, Value::Time(time));
-                }
-            }
-            FieldType::String | FieldType::LocaltimeIntoDay => {}
-            FieldType::Uint8
-            | FieldType::Uint8Z
-            | FieldType::Uint16
-            | FieldType::Uint16Z
-            | FieldType::Uint32
-            | FieldType::Uint32Z
-            | FieldType::Sint8 => {
-                if let Some(s) = scales(v.field_num as usize) {
-                    v.value.scale(s);
-                }
-                if let Some(o) = offsets(v.field_num as usize) {
-                    v.value.offset(o);
-                }
-            }
-            f => {
-                if let Value::U8(k) = v.value {
-                    if let Some(t) = get_field_string_value(f, usize::from(k)) {
-                        std::mem::replace(&mut v.value, Value::Enum(t));
+        if let FieldNum::GlobalProfile(field_num) = v.field_num {
+            match fields(field_num as usize) {
+                FieldType::None => (),
+                FieldType::Coordinates => {
+                    if let Value::I32(ref inner) = v.value {
+                        let coord = *inner as f32 * COORD_SEMICIRCLES_CALC;
+                        std::mem::replace(&mut v.value, Value::F32(coord));
                     }
-                } else if let Value::U16(k) = v.value {
-                    if let Some(t) = get_field_string_value(f, usize::from(k)) {
-                        std::mem::replace(&mut v.value, Value::Enum(t));
+                }
+                FieldType::Timestamp | FieldType::DateTime => {
+                    if let Value::U32(ref inner) = v.value {
+                        if (*inner as u64 + PSEUDO_EPOCH as u64) < (u32::MAX as u64) {
+                            let date = *inner + PSEUDO_EPOCH;
+                            std::mem::replace(&mut v.value, Value::Time(date));
+                        }
+                    }
+                }
+                FieldType::LocalDateTime => {
+                    if let Value::U32(ref inner) = v.value {
+                        let time = *inner + PSEUDO_EPOCH - 3600;
+                        std::mem::replace(&mut v.value, Value::Time(time));
+                    }
+                }
+                FieldType::String | FieldType::LocaltimeIntoDay => {}
+                FieldType::Uint8
+                | FieldType::Uint8Z
+                | FieldType::Uint16
+                | FieldType::Uint16Z
+                | FieldType::Uint32
+                | FieldType::Uint32Z
+                | FieldType::Sint8 => {
+                    if let Some(s) = scales(field_num as usize) {
+                        v.value.scale(s);
+                    }
+                    if let Some(o) = offsets(field_num as usize) {
+                        v.value.offset(o);
+                    }
+                }
+                FieldType::FitBaseType => {}
+                f => {
+                    if let Value::U8(k) = v.value {
+                        if let Some(t) = get_field_string_value(f, usize::from(k)) {
+                            std::mem::replace(&mut v.value, Value::Enum(t));
+                        }
+                    } else if let Value::U16(k) = v.value {
+                        if let Some(t) = get_field_string_value(f, usize::from(k)) {
+                            std::mem::replace(&mut v.value, Value::Enum(t));
+                        }
                     }
                 }
             }
@@ -381,68 +414,71 @@ impl DataField {
         offsets: MatchOffsetFn,
         def_field: Option<&FieldDefinition>,
     ) -> Value {
-        match fields(v.field_num as usize) {
-            FieldType::None => Value::None,
-            FieldType::Coordinates => {
-                if let Value::F32(ref inner) = v.value {
-                    let coord = *inner / COORD_SEMICIRCLES_CALC;
-                    return Value::I32(coord as i32);
+        match v.field_num {
+            FieldNum::GlobalProfile(field_num) => match fields(field_num as usize) {
+                FieldType::None => Value::None,
+                FieldType::Coordinates => {
+                    if let Value::F32(ref inner) = v.value {
+                        let coord = *inner / COORD_SEMICIRCLES_CALC;
+                        return Value::I32(coord as i32);
+                    }
+                    Value::None
                 }
-                Value::None
-            }
-            FieldType::DateTime | FieldType::Timestamp => {
-                if let Value::Time(ref inner) = v.value {
-                    let date = *inner - PSEUDO_EPOCH;
-                    return Value::U32(date);
+                FieldType::DateTime | FieldType::Timestamp => {
+                    if let Value::Time(ref inner) = v.value {
+                        let date = *inner - PSEUDO_EPOCH;
+                        return Value::U32(date);
+                    }
+                    Value::None
                 }
-                Value::None
-            }
-            FieldType::LocalDateTime => {
-                if let Value::Time(ref inner) = v.value {
-                    let date = *inner - PSEUDO_EPOCH + 3600;
-                    return Value::U32(date);
+                FieldType::LocalDateTime => {
+                    if let Value::Time(ref inner) = v.value {
+                        let date = *inner - PSEUDO_EPOCH + 3600;
+                        return Value::U32(date);
+                    }
+                    Value::None
                 }
-                Value::None
-            }
-            FieldType::String | FieldType::LocaltimeIntoDay => v.clone().value,
-            FieldType::Uint8
-            | FieldType::Uint8Z
-            | FieldType::Uint16
-            | FieldType::Uint16Z
-            | FieldType::Uint32
-            | FieldType::Uint32Z
-            | FieldType::Sint8 => {
-                let mut v = v.clone();
-                if let Some(s) = scales(v.field_num as usize) {
-                    v.value.rescale(s);
+                FieldType::String | FieldType::LocaltimeIntoDay => v.clone().value,
+                FieldType::Uint8
+                | FieldType::Uint8Z
+                | FieldType::Uint16
+                | FieldType::Uint16Z
+                | FieldType::Uint32
+                | FieldType::Uint32Z
+                | FieldType::Sint8 => {
+                    let mut v = v.clone();
+                    if let Some(s) = scales(field_num as usize) {
+                        v.value.rescale(s);
+                    }
+                    if let Some(o) = offsets(field_num as usize) {
+                        v.value.reoffset(o);
+                    }
+                    v.value
                 }
-                if let Some(o) = offsets(v.field_num as usize) {
-                    v.value.reoffset(o);
-                }
-                v.value
-            }
-            f => {
-                let v = v.clone();
-                if let Value::Enum(k) = v.value {
-                    if let Some(t) = get_field_key_from_string(f, k) {
-                        match def_field {
-                            None => {}
-                            Some(def_field) => {
-                                if def_field.size == 1 {
-                                    return Value::U8(t as u8);
-                                } else if def_field.size == 2 {
-                                    return Value::U16(t as u16);
-                                } else if def_field.size == 4 {
-                                    return Value::U32(t as u32);
-                                } else if def_field.size == 8 {
-                                    return Value::U64(t as u64);
+                f => {
+                    let v = v.clone();
+                    if let Value::Enum(k) = v.value {
+                        if let Some(t) = get_field_key_from_string(f, k) {
+                            match def_field {
+                                None => {}
+                                Some(def_field) => {
+                                    if def_field.size == 1 {
+                                        return Value::U8(t as u8);
+                                    } else if def_field.size == 2 {
+                                        return Value::U16(t as u16);
+                                    } else if def_field.size == 4 {
+                                        return Value::U32(t as u32);
+                                    } else if def_field.size == 8 {
+                                        return Value::U64(t as u64);
+                                    }
                                 }
                             }
                         }
                     }
+                    v.value
                 }
-                v.value
-            }
+            },
+            FieldNum::DeveloperData(_, _) => v.value.clone(),
         }
     }
 

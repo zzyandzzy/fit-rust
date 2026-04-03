@@ -1,4 +1,4 @@
-use crate::protocol::data_field::DataField;
+use crate::protocol::data_field::{DataField, FieldNum};
 use crate::protocol::value::Value;
 
 // Helper functions and macros for the merge_sessions function
@@ -11,7 +11,7 @@ macro_rules! update_field {
     };
 }
 
-pub fn get_field_value(field_num: u8, values: &[DataField]) -> Option<Value> {
+pub fn get_field_value(field_num: FieldNum, values: &[DataField]) -> Option<Value> {
     values
         .iter()
         .find(|field| field.field_num == field_num)
